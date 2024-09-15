@@ -1,0 +1,15 @@
+/config/*
+!/config/config.php
+!/config/autoload.php
+
+*.log
+
+*.cache
+
+*.tmp
+*.swp
+*.bak
+
+.env
+.env.local
+.env.*.local
