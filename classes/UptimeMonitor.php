@@ -73,6 +73,12 @@ class UptimeMonitor
         foreach ($monitors as $monitor) {
             $result = $this->checkSite($monitor);
             error_log("Checked {$monitor['name']}: {$result['status']} - {$result['message']}");
+
+            if ($result['status'] === 'down') {
+                $this->handleDowntime($monitor, $result);
+            } else {
+                $this->resetAlertStatus($monitor['id']);
+            }
         }
     }
 
@@ -124,12 +130,6 @@ class UptimeMonitor
 
         $this->updateMonitorStatus($monitor['id'], $result);
 
-        if ($result['status'] === 'down') {
-            $this->handleDowntime($monitor, $result);
-        } else {
-            $this->resetAlertStatus($monitor['id']);
-        }
-
         return $result;
     }
 
@@ -161,7 +161,8 @@ class UptimeMonitor
             $this->sendAlert($monitor, $result);
             $this->updateLastAlertTime($monitor['id'], $currentTime);
         } else {
-            error_log("Alert for monitor '{$monitor['name']}' suppressed due to cooldown period.");
+            $nextAlertTime = $lastAlertTime + $this->alertCooldownPeriod;
+            error_log("Alert for monitor '{$monitor['name']}' suppressed due to cooldown period. Next alert possible at: " . date('Y-m-d H:i:s', $nextAlertTime));
         }
     }
 
