@@ -12,24 +12,25 @@ class UptimeMonitor
         $this->db = $db->connect();
     }
 
-    public function addMonitor($name, $url, $checkInterval, $expectedStatusCode = 200, $expectedKeyword = '')
+    public function addMonitor($name, $url, $checkInterval, $expectedStatusCode = 200, $expectedKeyword = '', $notificationEmails = '')
     {
-        $sql = "INSERT INTO monitors (name, url, check_interval, expected_status_code, expected_keyword) 
-                VALUES (:name, :url, :interval, :status_code, :keyword)";
+        $sql = "INSERT INTO monitors (name, url, check_interval, expected_status_code, expected_keyword, notification_emails) 
+                VALUES (:name, :url, :interval, :status_code, :keyword, :emails)";
         $stmt = $this->db->prepare($sql);
         return $stmt->execute([
             ':name' => $name,
             ':url' => $url,
             ':interval' => $checkInterval,
             ':status_code' => $expectedStatusCode,
-            ':keyword' => $expectedKeyword
+            ':keyword' => $expectedKeyword,
+            ':emails' => $notificationEmails
         ]);
     }
 
-    public function updateMonitor($id, $name, $url, $checkInterval, $expectedStatusCode = 200, $expectedKeyword = '')
+    public function updateMonitor($id, $name, $url, $checkInterval, $expectedStatusCode = 200, $expectedKeyword = '', $notificationEmails = '')
     {
         $sql = "UPDATE monitors SET name = :name, url = :url, check_interval = :interval, 
-                expected_status_code = :status_code, expected_keyword = :keyword 
+                expected_status_code = :status_code, expected_keyword = :keyword, notification_emails = :emails 
                 WHERE id = :id";
         $stmt = $this->db->prepare($sql);
         return $stmt->execute([
@@ -38,7 +39,8 @@ class UptimeMonitor
             ':url' => $url,
             ':interval' => $checkInterval,
             ':status_code' => $expectedStatusCode,
-            ':keyword' => $expectedKeyword
+            ':keyword' => $expectedKeyword,
+            ':emails' => $notificationEmails
         ]);
     }
 
@@ -189,12 +191,36 @@ class UptimeMonitor
         $stmt->execute([':id' => $monitorId]);
     }
 
-    private function sendAlert($monitor, $result)
+    public function sendAlert($monitor, $result)
     {
-        if (Email::sendAlert($monitor, $result)) {
-            error_log("Alert sent for monitor '{$monitor['name']}'. URL: {$monitor['url']}");
-        } else {
-            error_log("Failed to send alert for monitor '{$monitor['name']}'. URL: {$monitor['url']}");
+        $adminEmail = $this->getAdminEmail();
+        $notificationEmails = array_filter(explode(' ', $monitor['notification_emails']));
+        $notificationEmails[] = $adminEmail;
+
+        $uniqueEmails = array_unique($notificationEmails);
+        $allSent = true;
+
+        foreach ($uniqueEmails as $email) {
+            if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                if (Email::sendAlert($monitor, $result, $email)) {
+                    error_log("Alert sent to $email for monitor '{$monitor['name']}'. URL: {$monitor['url']}");
+                } else {
+                    error_log("Failed to send alert to $email for monitor '{$monitor['name']}'. URL: {$monitor['url']}");
+                    $allSent = false;
+                }
+            } else {
+                error_log("Invalid email address: $email. Skipping alert for monitor '{$monitor['name']}'.");
+                $allSent = false;
+            }
         }
+
+        return $allSent;
+    }
+
+    private function getAdminEmail()
+    {
+        $stmt = $this->db->prepare("SELECT setting_value FROM settings WHERE setting_key = 'admin_email'");
+        $stmt->execute();
+        return $stmt->fetchColumn();
     }
 }

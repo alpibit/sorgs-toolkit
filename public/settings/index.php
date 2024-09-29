@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         'date_format',
         'time_format',
         'check_interval',
-        'notification_email',
+        'admin_email',
         'smtp_host',
         'smtp_port',
         'smtp_user'
@@ -104,10 +104,10 @@ $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
             </div>
 
             <div class="sorgs-settings-section">
-                <h2>Notification Settings</h2>
+                <h2>Admin Settings</h2>
                 <div class="sorgs-form-group">
-                    <label for="notification_email">Notification Email:</label>
-                    <input type="email" id="notification_email" name="notification_email" value="<?php echo htmlspecialchars($settings['notification_email']); ?>">
+                    <label for="admin_email">Admin Email:</label>
+                    <input type="email" id="admin_email" name="admin_email" value="<?php echo htmlspecialchars($settings['admin_email']); ?>">
                 </div>
             </div>
 

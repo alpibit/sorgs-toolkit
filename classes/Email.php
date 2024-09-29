@@ -1,7 +1,7 @@
 <?php
 class Email
 {
-    public static function sendAlert($monitor, $result)
+    public static function sendAlert($monitor, $result, $to)
     {
         $settings = self::getSmtpSettings();
 
@@ -17,14 +17,12 @@ class Email
             $settings['smtp_pass']
         );
 
-        // Enable debug mode for troubleshooting
         $smtp->setDebug(true);
 
         try {
             $smtp->connect();
 
             $from = 'noreply@' . $_SERVER['HTTP_HOST'];
-            $to = $settings['notification_email'] ?? ADMIN_EMAIL;
             $subject = "Alert: {$monitor['name']} is {$result['status']}!";
 
             $body = "Monitor: {$monitor['name']}\r\n";
@@ -43,10 +41,10 @@ class Email
             $smtp->sendMail($from, $to, $subject, $body);
             $smtp->quit();
 
-            error_log("Alert email sent successfully for monitor: {$monitor['name']}");
+            error_log("Alert email sent successfully to $to for monitor: {$monitor['name']}");
             return true;
         } catch (Exception $e) {
-            error_log("Failed to send alert email. Error: " . $e->getMessage());
+            error_log("Failed to send alert email to $to. Error: " . $e->getMessage());
             return false;
         }
     }
@@ -57,7 +55,7 @@ class Email
         $conn = $db->connect();
 
         $settings = [];
-        $sql = "SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'notification_email')";
+        $sql = "SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass')";
         $result = $conn->query($sql);
 
         while ($row = $result->fetch(PDO::FETCH_ASSOC)) {

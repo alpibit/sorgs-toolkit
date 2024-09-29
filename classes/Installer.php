@@ -86,9 +86,9 @@ class Installer
             ['date_format', 'Y-m-d'],
             ['time_format', 'H:i:s'],
             ['check_interval', '300'],
-            ['notification_email', ''],
+            ['admin_email', ''],
             ['installed', 'false'],
-            ['alert_cooldown', '3600']  // 1 hour in seconds
+            ['alert_cooldown', '3600']
         ];
 
         foreach ($defaultSettings as $setting) {

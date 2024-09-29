@@ -27,7 +27,8 @@ switch ($action) {
                 $_POST['url'],
                 $_POST['check_interval'],
                 $_POST['expected_status_code'],
-                $_POST['expected_keyword']
+                $_POST['expected_keyword'],
+                $_POST['notification_emails']
             );
             if ($result) {
                 $message = "Monitor added successfully.";
@@ -47,7 +48,8 @@ switch ($action) {
                 $_POST['url'],
                 $_POST['check_interval'],
                 $_POST['expected_status_code'],
-                $_POST['expected_keyword']
+                $_POST['expected_keyword'],
+                $_POST['notification_emails']
             );
             if ($result) {
                 $message = "Monitor updated successfully.";
@@ -94,7 +96,6 @@ switch ($action) {
         if (isset($_GET['id'])) {
             $monitorData = $monitor->getMonitor($_GET['id']);
             if ($monitorData) {
-                // Create a test result
                 $testResult = [
                     'status' => 'down',
                     'message' => 'This is a test alert email.',
@@ -103,10 +104,34 @@ switch ($action) {
                     'download_size' => 0,
                     'error' => null
                 ];
-                if (Email::sendAlert($monitorData, $testResult)) {
-                    $message = "Test alert email sent successfully for monitor '{$monitorData['name']}'.";
+                if ($monitor->sendAlert($monitorData, $testResult)) {
+                    $message = "Test alert email(s) sent successfully for monitor '{$monitorData['name']}'.";
                 } else {
-                    $message = "Failed to send test alert email for monitor '{$monitorData['name']}'. Check error logs for details.";
+                    $message = "Some or all test alert emails failed to send for monitor '{$monitorData['name']}'. Check error logs for details.";
+                }
+            } else {
+                $message = "Monitor not found.";
+            }
+            header('Location: index.php?message=' . urlencode($message));
+            exit;
+        }
+        break;
+    case 'test_email':
+        if (isset($_GET['id'])) {
+            $monitorData = $monitor->getMonitor($_GET['id']);
+            if ($monitorData) {
+                $testResult = [
+                    'status' => 'down',
+                    'message' => 'This is a test alert email.',
+                    'http_code' => 404,
+                    'response_time' => 1000,
+                    'download_size' => 0,
+                    'error' => null
+                ];
+                if ($monitor->sendAlert($monitorData, $testResult)) {
+                    $message = "Test alert email(s) sent successfully for monitor '{$monitorData['name']}'.";
+                } else {
+                    $message = "Some or all test alert emails failed to send for monitor '{$monitorData['name']}'. Check error logs for details.";
                 }
             } else {
                 $message = "Monitor not found.";
@@ -182,6 +207,11 @@ if (isset($_GET['message'])) {
                 </div>
 
                 <div class="sorgs-form-group">
+                    <label for="notification_emails">Notification Emails (space-separated):</label>
+                    <input type="text" id="notification_emails" name="notification_emails" value="<?php echo isset($monitorData['notification_emails']) ? htmlspecialchars($monitorData['notification_emails']) : ''; ?>">
+                </div>
+
+                <div class="sorgs-form-group">
                     <input type="submit" value="<?php echo $action == 'add' ? 'Add' : 'Update'; ?> Monitor">
                 </div>
             </form>
@@ -198,6 +228,7 @@ if (isset($_GET['message'])) {
                         <th>Check Interval</th>
                         <th>Last Check</th>
                         <th>Status</th>
+                        <th>Notification Emails</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -209,6 +240,7 @@ if (isset($_GET['message'])) {
                             <td><?php echo htmlspecialchars($m['check_interval']); ?> seconds</td>
                             <td><?php echo $m['last_check_time'] ? htmlspecialchars($m['last_check_time']) : 'Never'; ?></td>
                             <td><?php echo $m['last_status'] ? htmlspecialchars(ucfirst($m['last_status'])) : 'Unknown'; ?></td>
+                            <td><?php echo htmlspecialchars($m['notification_emails']); ?></td>
                             <td class="sorgs-actions">
                                 <a href="index.php?action=edit&id=<?php echo $m['id']; ?>" class="sorgs-button sorgs-button-small sorgs-button-secondary">Edit</a>
                                 <a href="index.php?action=delete&id=<?php echo $m['id']; ?>" onclick="return confirm('Are you sure you want to delete this monitor?')" class="sorgs-button sorgs-button-small sorgs-button-danger">Delete</a>
