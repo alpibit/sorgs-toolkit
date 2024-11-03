@@ -12,10 +12,10 @@ class UptimeMonitor
         $this->db = $db->connect();
     }
 
-    public function addMonitor($name, $url, $checkInterval, $expectedStatusCode = 200, $expectedKeyword = '', $notificationEmails = '')
+    public function addMonitor($name, $url, $checkInterval, $expectedStatusCode = 200, $expectedKeyword = '', $notificationEmails = '', $telegramChatIds = '')
     {
-        $sql = "INSERT INTO monitors (name, url, check_interval, expected_status_code, expected_keyword, notification_emails) 
-                VALUES (:name, :url, :interval, :status_code, :keyword, :emails)";
+        $sql = "INSERT INTO monitors (name, url, check_interval, expected_status_code, expected_keyword, notification_emails, telegram_chat_ids) 
+                VALUES (:name, :url, :interval, :status_code, :keyword, :emails, :telegram_chat_ids)";
         $stmt = $this->db->prepare($sql);
         return $stmt->execute([
             ':name' => $name,
@@ -23,14 +23,21 @@ class UptimeMonitor
             ':interval' => $checkInterval,
             ':status_code' => $expectedStatusCode,
             ':keyword' => $expectedKeyword,
-            ':emails' => $notificationEmails
+            ':emails' => $notificationEmails,
+            ':telegram_chat_ids' => $telegramChatIds
         ]);
     }
 
-    public function updateMonitor($id, $name, $url, $checkInterval, $expectedStatusCode = 200, $expectedKeyword = '', $notificationEmails = '')
+    public function updateMonitor($id, $name, $url, $checkInterval, $expectedStatusCode = 200, $expectedKeyword = '', $notificationEmails = '', $telegramChatIds = '')
     {
-        $sql = "UPDATE monitors SET name = :name, url = :url, check_interval = :interval, 
-                expected_status_code = :status_code, expected_keyword = :keyword, notification_emails = :emails 
+        $sql = "UPDATE monitors SET 
+                name = :name, 
+                url = :url, 
+                check_interval = :interval, 
+                expected_status_code = :status_code, 
+                expected_keyword = :keyword, 
+                notification_emails = :emails,
+                telegram_chat_ids = :telegram_chat_ids 
                 WHERE id = :id";
         $stmt = $this->db->prepare($sql);
         return $stmt->execute([
@@ -40,7 +47,8 @@ class UptimeMonitor
             ':interval' => $checkInterval,
             ':status_code' => $expectedStatusCode,
             ':keyword' => $expectedKeyword,
-            ':emails' => $notificationEmails
+            ':emails' => $notificationEmails,
+            ':telegram_chat_ids' => $telegramChatIds
         ]);
     }
 
@@ -193,23 +201,77 @@ class UptimeMonitor
 
     public function sendAlert($monitor, $result)
     {
-        $adminEmail = $this->getAdminEmail();
-        $notificationEmails = array_filter(explode(' ', $monitor['notification_emails']));
-        $notificationEmails[] = $adminEmail;
-
-        $uniqueEmails = array_unique($notificationEmails);
         $allSent = true;
+
+        // Prepare alert message (used for both email and Telegram)
+        $status = ucfirst($result['status']);
+        $message = "🚨 Alert for {$monitor['name']}\n\n";
+        $message .= "Status: $status\n";
+        $message .= "URL: {$monitor['url']}\n";
+        $message .= "Time: " . date('Y-m-d H:i:s') . "\n";
+
+        if (isset($result['http_code'])) {
+            $message .= "HTTP Status: {$result['http_code']}\n";
+        }
+
+        if (isset($result['response_time'])) {
+            $message .= "Response Time: {$result['response_time']}ms\n";
+        }
+
+        if (!empty($result['error'])) {
+            $message .= "Error: {$result['error']}\n";
+        }
+
+        // Handle email notifications
+        $adminEmail = $this->getAdminEmail();
+        $notificationEmails = !empty($monitor['notification_emails']) ?
+            array_filter(explode(' ', $monitor['notification_emails'])) : [];
+
+        if ($adminEmail) {
+            $notificationEmails[] = $adminEmail;
+        }
+
+        $uniqueEmails = array_unique(array_filter($notificationEmails));
 
         foreach ($uniqueEmails as $email) {
             if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 if (Email::sendAlert($monitor, $result, $email)) {
-                    error_log("Alert sent to $email for monitor '{$monitor['name']}'. URL: {$monitor['url']}");
+                    error_log("Email alert sent to $email for monitor '{$monitor['name']}'. URL: {$monitor['url']}");
                 } else {
-                    error_log("Failed to send alert to $email for monitor '{$monitor['name']}'. URL: {$monitor['url']}");
+                    error_log("Failed to send email alert to $email for monitor '{$monitor['name']}'. URL: {$monitor['url']}");
                     $allSent = false;
                 }
             } else {
                 error_log("Invalid email address: $email. Skipping alert for monitor '{$monitor['name']}'.");
+                $allSent = false;
+            }
+        }
+
+        // Handle Telegram notifications
+        if (!empty($monitor['telegram_chat_ids'])) {
+            $telegram = new TelegramNotifier();
+            $chatIds = array_filter(array_map('trim', explode(',', $monitor['telegram_chat_ids'])));
+
+            foreach ($chatIds as $chatId) {
+                if ($telegram->sendMessage($message, $chatId)) {
+                    error_log("Telegram alert sent to chat ID $chatId for monitor '{$monitor['name']}'. URL: {$monitor['url']}");
+                } else {
+                    error_log("Failed to send Telegram alert to chat ID $chatId for monitor '{$monitor['name']}'. URL: {$monitor['url']}");
+                    $allSent = false;
+                }
+            }
+        }
+
+        // Send to default Telegram chat if configured and not already included
+        $stmt = $this->db->query("SELECT setting_value FROM settings WHERE setting_key = 'telegram_default_chat_id'");
+        $defaultChatId = $stmt->fetchColumn();
+
+        if ($defaultChatId && !in_array($defaultChatId, explode(',', $monitor['telegram_chat_ids'] ?? ''))) {
+            $telegram = new TelegramNotifier();
+            if ($telegram->sendMessage($message)) {
+                error_log("Telegram alert sent to default chat ID for monitor '{$monitor['name']}'. URL: {$monitor['url']}");
+            } else {
+                error_log("Failed to send Telegram alert to default chat ID for monitor '{$monitor['name']}'. URL: {$monitor['url']}");
                 $allSent = false;
             }
         }

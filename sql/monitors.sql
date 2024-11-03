@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS `monitors` (
     `expected_status_code` int(11) NOT NULL DEFAULT 200,
     `expected_keyword` varchar(255) DEFAULT NULL,
     `notification_emails` text,
+    `telegram_chat_ids` text,
     `last_check_time` timestamp NULL DEFAULT NULL,
     `last_status` enum('up', 'down') DEFAULT NULL,
     `last_response_time` float DEFAULT NULL,

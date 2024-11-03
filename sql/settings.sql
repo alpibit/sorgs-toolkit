@@ -6,9 +6,10 @@ CREATE TABLE IF NOT EXISTS `settings` (
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     UNIQUE KEY `setting_key` (`setting_key`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
-INSERT INTO `settings` (`setting_key`, `setting_value`)
+INSERT INTO
+    `settings` (`setting_key`, `setting_value`)
 VALUES
     ('timezone', 'UTC'),
     ('date_format', 'Y-m-d'),
@@ -19,10 +20,15 @@ VALUES
     ('smtp_host', ''),
     ('smtp_port', ''),
     ('smtp_user', ''),
-    ('smtp_pass', '')
-ON DUPLICATE KEY UPDATE
-    `setting_value` = VALUES(`setting_value`);
+    ('smtp_pass', ''),
+    ('telegram_bot_token', ''),
+    ('telegram_default_chat_id', '') ON DUPLICATE KEY
+UPDATE
+    `setting_value` =
+VALUES
+(`setting_value`);
 
 CREATE INDEX idx_settings_updated_at ON `settings` (`updated_at`);
 
-ALTER TABLE `settings` COMMENT 'Stores application-wide settings';
+ALTER TABLE
+    `settings` COMMENT 'Stores application-wide settings';

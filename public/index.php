@@ -28,7 +28,8 @@ switch ($action) {
                 $_POST['check_interval'],
                 $_POST['expected_status_code'],
                 $_POST['expected_keyword'],
-                $_POST['notification_emails']
+                $_POST['notification_emails'],
+                $_POST['telegram_chat_ids']
             );
             if ($result) {
                 $message = "Monitor added successfully.";
@@ -49,7 +50,8 @@ switch ($action) {
                 $_POST['check_interval'],
                 $_POST['expected_status_code'],
                 $_POST['expected_keyword'],
-                $_POST['notification_emails']
+                $_POST['notification_emails'],
+                $_POST['telegram_chat_ids']
             );
             if ($result) {
                 $message = "Monitor updated successfully.";
@@ -92,46 +94,22 @@ switch ($action) {
         }
         break;
 
-    case 'test_email':
+    case 'test':
         if (isset($_GET['id'])) {
             $monitorData = $monitor->getMonitor($_GET['id']);
             if ($monitorData) {
                 $testResult = [
                     'status' => 'down',
-                    'message' => 'This is a test alert email.',
+                    'message' => 'This is a test notification.',
                     'http_code' => 404,
                     'response_time' => 1000,
                     'download_size' => 0,
                     'error' => null
                 ];
                 if ($monitor->sendAlert($monitorData, $testResult)) {
-                    $message = "Test alert email(s) sent successfully for monitor '{$monitorData['name']}'.";
+                    $message = "Test notifications sent successfully for monitor '{$monitorData['name']}'.";
                 } else {
-                    $message = "Some or all test alert emails failed to send for monitor '{$monitorData['name']}'. Check error logs for details.";
-                }
-            } else {
-                $message = "Monitor not found.";
-            }
-            header('Location: index.php?message=' . urlencode($message));
-            exit;
-        }
-        break;
-    case 'test_email':
-        if (isset($_GET['id'])) {
-            $monitorData = $monitor->getMonitor($_GET['id']);
-            if ($monitorData) {
-                $testResult = [
-                    'status' => 'down',
-                    'message' => 'This is a test alert email.',
-                    'http_code' => 404,
-                    'response_time' => 1000,
-                    'download_size' => 0,
-                    'error' => null
-                ];
-                if ($monitor->sendAlert($monitorData, $testResult)) {
-                    $message = "Test alert email(s) sent successfully for monitor '{$monitorData['name']}'.";
-                } else {
-                    $message = "Some or all test alert emails failed to send for monitor '{$monitorData['name']}'. Check error logs for details.";
+                    $message = "Some or all test notifications failed to send for monitor '{$monitorData['name']}'. Check error logs for details.";
                 }
             } else {
                 $message = "Monitor not found.";
@@ -212,13 +190,19 @@ if (isset($_GET['message'])) {
                 </div>
 
                 <div class="sorgs-form-group">
-                    <input type="submit" value="<?php echo $action == 'add' ? 'Add' : 'Update'; ?> Monitor">
+                    <label for="telegram_chat_ids">Telegram Chat IDs (comma-separated):</label>
+                    <input type="text" id="telegram_chat_ids" name="telegram_chat_ids" value="<?php echo isset($monitorData['telegram_chat_ids']) ? htmlspecialchars($monitorData['telegram_chat_ids']) : ''; ?>">
+                    <small class="sorgs-form-help">Enter Telegram chat IDs separated by commas. These IDs will receive notifications.</small>
+                </div>
+
+                <div class="sorgs-form-group">
+                    <input type="submit" value="<?php echo $action == 'add' ? 'Add' : 'Update'; ?> Monitor" class="sorgs-button sorgs-button-primary">
                 </div>
             </form>
         <?php else: ?>
             <div class="sorgs-dashboard-actions">
                 <h2>Monitors</h2>
-                <a href="<?php echo BASE_URL; ?>/public/index.php?action=add" class="sorgs-button">Add New Monitor</a>
+                <a href="<?php echo BASE_URL; ?>/public/index.php?action=add" class="sorgs-button sorgs-button-primary">Add New Monitor</a>
             </div>
             <table class="sorgs-table">
                 <thead>
@@ -228,7 +212,7 @@ if (isset($_GET['message'])) {
                         <th>Check Interval</th>
                         <th>Last Check</th>
                         <th>Status</th>
-                        <th>Notification Emails</th>
+                        <th>Notifications</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -240,12 +224,19 @@ if (isset($_GET['message'])) {
                             <td><?php echo htmlspecialchars($m['check_interval']); ?> seconds</td>
                             <td><?php echo $m['last_check_time'] ? htmlspecialchars($m['last_check_time']) : 'Never'; ?></td>
                             <td><?php echo $m['last_status'] ? htmlspecialchars(ucfirst($m['last_status'])) : 'Unknown'; ?></td>
-                            <td><?php echo htmlspecialchars($m['notification_emails']); ?></td>
+                            <td>
+                                <?php if (!empty($m['notification_emails'])): ?>
+                                    <div><small>📧 <?php echo htmlspecialchars($m['notification_emails']); ?></small></div>
+                                <?php endif; ?>
+                                <?php if (!empty($m['telegram_chat_ids'])): ?>
+                                    <div><small>📱 <?php echo htmlspecialchars($m['telegram_chat_ids']); ?></small></div>
+                                <?php endif; ?>
+                            </td>
                             <td class="sorgs-actions">
                                 <a href="index.php?action=edit&id=<?php echo $m['id']; ?>" class="sorgs-button sorgs-button-small sorgs-button-secondary">Edit</a>
                                 <a href="index.php?action=delete&id=<?php echo $m['id']; ?>" onclick="return confirm('Are you sure you want to delete this monitor?')" class="sorgs-button sorgs-button-small sorgs-button-danger">Delete</a>
                                 <a href="index.php?action=check&id=<?php echo $m['id']; ?>" class="sorgs-button sorgs-button-small sorgs-button-primary">Check</a>
-                                <a href="index.php?action=test_email&id=<?php echo $m['id']; ?>" class="sorgs-button sorgs-button-small">Test</a>
+                                <a href="index.php?action=test&id=<?php echo $m['id']; ?>" class="sorgs-button sorgs-button-small">Test</a>
                             </td>
                         </tr>
                     <?php endforeach; ?>
