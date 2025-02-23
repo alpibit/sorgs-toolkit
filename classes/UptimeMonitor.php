@@ -92,54 +92,88 @@ class UptimeMonitor
         }
     }
 
-    public function checkSite($monitor)
+    public function checkSite($monitor, $retryAttempts = 3, $timeout = 15)
     {
-        $ch = curl_init($monitor['url']);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 30,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS => 5,
-            CURLOPT_USERAGENT => 'Generic Uptime Monitor/1.0',
-            CURLOPT_HTTPHEADER => [
-                'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language: en-US,en;q=0.5',
-                'Cache-Control: no-cache',
-                'Pragma: no-cache',
-                'X-Uptime-Check: true'
-            ],
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_SSL_VERIFYHOST => 2,
-            CURLOPT_SSLVERSION => CURL_SSLVERSION_TLSv1_2
-        ]);
+        $attempts = 0;
+        while ($attempts < $retryAttempts) {
+            $attempts++;
 
-        $response = curl_exec($ch);
-        $info = curl_getinfo($ch);
-        $error = curl_error($ch);
-        curl_close($ch);
+            $ch = curl_init($monitor['url']);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => $timeout,
+                CURLOPT_CONNECTTIMEOUT => 5,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_MAXREDIRS => 5,
+                CURLOPT_USERAGENT => 'Generic Uptime Monitor/1.0',
+                CURLOPT_HTTPHEADER => [
+                    'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language: en-US,en;q=0.5',
+                    'Cache-Control: no-cache',
+                    'Pragma: no-cache',
+                    'X-Uptime-Check: true'
+                ],
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_SSL_VERIFYHOST => 2,
+                CURLOPT_SSLVERSION => CURL_SSLVERSION_TLSv1_2
+            ]);
 
-        $result = [
-            'status' => 'up',
-            'message' => 'Site is up and functioning correctly.',
-            'http_code' => $info['http_code'],
-            'response_time' => round($info['total_time'] * 1000, 2), // in milliseconds
-            'download_size' => $info['size_download'],
-            'error' => $error
-        ];
+            $response = curl_exec($ch);
+            $info = curl_getinfo($ch);
+            $error = curl_error($ch);
+            curl_close($ch);
 
-        if ($error) {
-            $result['status'] = 'down';
-            $result['message'] = "CURL Error: $error";
-        } elseif ($info['http_code'] != $monitor['expected_status_code']) {
-            $result['status'] = 'down';
-            $result['message'] = "Unexpected HTTP status code: Expected {$monitor['expected_status_code']}, got {$info['http_code']}";
-        } elseif (!empty($monitor['expected_keyword']) && strpos($response, $monitor['expected_keyword']) === false) {
-            $result['status'] = 'down';
-            $result['message'] = "Expected keyword not found in the response";
+            $result = [
+                'status' => 'up',
+                'message' => 'Site is up and functioning correctly.',
+                'http_code' => $info['http_code'],
+                'response_time' => round($info['total_time'] * 1000, 2), // in milliseconds
+                'download_size' => $info['size_download'],
+                'error' => $error,
+                'attempt' => $attempts
+            ];
+
+            // Check if the request was successful
+            $isSuccess = true;
+            $failureReason = '';
+
+            if ($error) {
+                $isSuccess = false;
+                $failureReason = "CURL Error: $error";
+            } elseif ($info['http_code'] != $monitor['expected_status_code']) {
+                $isSuccess = false;
+                $failureReason = "Unexpected HTTP status code: Expected {$monitor['expected_status_code']}, got {$info['http_code']}";
+            } elseif (!empty($monitor['expected_keyword']) && strpos($response, $monitor['expected_keyword']) === false) {
+                $isSuccess = false;
+                $failureReason = "Expected keyword not found in the response";
+            }
+
+            // If successful, return immediately
+            if ($isSuccess) {
+                if ($attempts > 1) {
+                    $result['message'] .= " (Succeeded after $attempts attempts)";
+                }
+                $this->updateMonitorStatus($monitor['id'], $result);
+                return $result;
+            }
+
+            // If this was the last attempt, mark as down
+            if ($attempts >= $retryAttempts) {
+                $result['status'] = 'down';
+                $result['message'] = $failureReason . " (Failed after $attempts attempts)";
+                $this->updateMonitorStatus($monitor['id'], $result);
+                return $result;
+            }
+
+            // Log retry attempt
+            error_log("Monitor check failed for {$monitor['name']} (Attempt $attempts/$retryAttempts): $failureReason. Retrying...");
+
+            // Wait briefly before retry (exponential backoff)
+            $waitTime = pow(2, $attempts - 1) * 3000000; // Convert to microseconds
+            usleep($waitTime);
         }
 
-        $this->updateMonitorStatus($monitor['id'], $result);
-
+        // Fallback
         return $result;
     }
 
