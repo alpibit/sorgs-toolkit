@@ -21,11 +21,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $username = $_POST['username'];
     $password = $_POST['password'];
 
-    if ($user->login($username, $password) && $user->isAdmin()) {
-        header('Location: ' . BASE_URL . '/public/index.php');
-        exit;
+    usleep(rand(200000, 500000));
+
+    if ($user->isLoginBlocked()) {
+        $error = 'Too many failed login attempts. Please try again after 15 minutes.';
     } else {
-        $error = 'Invalid username or password.';
+        if ($user->login($username, $password) && $user->isAdmin()) {
+            $user->resetLoginAttempts();
+            header('Location: ' . BASE_URL . '/public/index.php');
+            exit;
+        } else {
+            $user->trackFailedLogin();
+            $error = 'Invalid username or password.';
+        }
     }
 }
 ?>

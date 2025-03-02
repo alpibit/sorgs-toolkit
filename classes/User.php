@@ -72,4 +72,49 @@ class User
             ':password' => $hashedPassword
         ]);
     }
+
+    public function isLoginBlocked()
+    {
+        if (!isset($_SESSION['login_attempts'])) {
+            $_SESSION['login_attempts'] = [
+                'count' => 0,
+                'first_attempt' => time(),
+                'last_attempt' => time()
+            ];
+        }
+
+        if (time() - $_SESSION['login_attempts']['first_attempt'] > 900) {
+            $_SESSION['login_attempts'] = [
+                'count' => 0,
+                'first_attempt' => time(),
+                'last_attempt' => time()
+            ];
+            return false;
+        }
+
+        return $_SESSION['login_attempts']['count'] >= 5;
+    }
+
+    public function trackFailedLogin()
+    {
+        if (!isset($_SESSION['login_attempts'])) {
+            $_SESSION['login_attempts'] = [
+                'count' => 0,
+                'first_attempt' => time(),
+                'last_attempt' => time()
+            ];
+        }
+
+        $_SESSION['login_attempts']['count']++;
+        $_SESSION['login_attempts']['last_attempt'] = time();
+    }
+
+    public function resetLoginAttempts()
+    {
+        $_SESSION['login_attempts'] = [
+            'count' => 0,
+            'first_attempt' => time(),
+            'last_attempt' => time()
+        ];
+    }
 }
