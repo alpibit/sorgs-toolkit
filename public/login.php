@@ -10,6 +10,7 @@ session_start();
 
 $user = new User();
 
+// Redirect if already logged in
 if ($user->isLoggedIn() && $user->isAdmin()) {
     header('Location: ' . BASE_URL . '/public/index.php');
     exit;
@@ -17,23 +18,43 @@ if ($user->isLoggedIn() && $user->isAdmin()) {
 
 $error = '';
 
+// Generate a simple math captcha
+function generateMathCaptcha()
+{
+    $num1 = rand(1, 10);
+    $num2 = rand(1, 10);
+    $_SESSION['captcha_answer'] = $num1 + $num2;
+    return "What is $num1 + $num2?";
+}
+
+// Initialize captcha if it doesn't exist
+if (!isset($_SESSION['captcha_question']) || !isset($_SESSION['captcha_answer'])) {
+    $_SESSION['captcha_question'] = generateMathCaptcha();
+}
+
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $username = $_POST['username'];
     $password = $_POST['password'];
+    $captcha_answer = isset($_POST['captcha_answer']) ? intval($_POST['captcha_answer']) : 0;
+    $expected_answer = $_SESSION['captcha_answer']; // Store the current answer before generating a new one
 
     usleep(rand(200000, 500000));
 
     if ($user->isLoginBlocked()) {
         $error = 'Too many failed login attempts. Please try again after 15 minutes.';
+        $_SESSION['captcha_question'] = generateMathCaptcha();
+    } elseif ($captcha_answer !== $expected_answer) {
+        $user->trackFailedLogin();
+        $error = 'Incorrect captcha answer.';
+        $_SESSION['captcha_question'] = generateMathCaptcha();
+    } elseif ($user->login($username, $password) && $user->isAdmin()) {
+        $user->resetLoginAttempts();
+        header('Location: ' . BASE_URL . '/public/index.php');
+        exit;
     } else {
-        if ($user->login($username, $password) && $user->isAdmin()) {
-            $user->resetLoginAttempts();
-            header('Location: ' . BASE_URL . '/public/index.php');
-            exit;
-        } else {
-            $user->trackFailedLogin();
-            $error = 'Invalid username or password.';
-        }
+        $user->trackFailedLogin();
+        $error = 'Invalid username or password.';
+        $_SESSION['captcha_question'] = generateMathCaptcha();
     }
 }
 ?>
@@ -63,6 +84,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <div class="sorgs-form-group">
                 <label for="password">Password:</label>
                 <input type="password" id="password" name="password" required>
+            </div>
+
+            <div class="sorgs-form-group">
+                <label for="captcha_answer"><?php echo htmlspecialchars($_SESSION['captcha_question']); ?></label>
+                <input type="text" id="captcha_answer" name="captcha_answer" required>
             </div>
 
             <div class="sorgs-form-group">
