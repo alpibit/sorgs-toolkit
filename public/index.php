@@ -122,6 +122,21 @@ switch ($action) {
 
 $monitors = $monitor->getAllMonitors();
 
+// Get monitor statistics
+$db = new Database();
+$conn = $db->connect();
+$stmt = $conn->query("SELECT 
+    COUNT(*) as total,
+    SUM(CASE WHEN last_status = 'up' THEN 1 ELSE 0 END) as up,
+    SUM(CASE WHEN last_status = 'down' THEN 1 ELSE 0 END) as down,
+    SUM(CASE WHEN last_status IS NULL THEN 1 ELSE 0 END) as unknown
+    FROM monitors");
+$stats = $stmt->fetch(PDO::FETCH_ASSOC);
+
+// Get average response time of up monitors
+$stmt = $conn->query("SELECT AVG(last_response_time) as avg_response FROM monitors WHERE last_status = 'up'");
+$avgResponse = $stmt->fetchColumn();
+
 if (isset($_GET['message'])) {
     $message = $_GET['message'];
 }
@@ -151,6 +166,35 @@ if (isset($_GET['message'])) {
 
         <?php if ($message): ?>
             <div class="sorgs-message"><?php echo htmlspecialchars($message); ?></div>
+        <?php endif; ?>
+
+        <?php if ($action != 'add' && $action != 'edit'): ?>
+            <!-- Stats Dashboard -->
+            <div class="sorgs-stats-container">
+                <h2>System Status</h2>
+                <div class="sorgs-stats">
+                    <div class="sorgs-stat-card sorgs-stat-total">
+                        <h3>Total Monitors</h3>
+                        <div class="value"><?php echo number_format($stats['total']); ?></div>
+                    </div>
+                    <div class="sorgs-stat-card sorgs-stat-up">
+                        <h3>Up</h3>
+                        <div class="value"><?php echo number_format($stats['up']); ?></div>
+                    </div>
+                    <div class="sorgs-stat-card sorgs-stat-down">
+                        <h3>Down</h3>
+                        <div class="value"><?php echo number_format($stats['down']); ?></div>
+                    </div>
+                    <div class="sorgs-stat-card sorgs-stat-unknown">
+                        <h3>Unknown</h3>
+                        <div class="value"><?php echo number_format($stats['unknown']); ?></div>
+                    </div>
+                    <div class="sorgs-stat-card sorgs-stat-response">
+                        <h3>Avg. Response Time</h3>
+                        <div class="value"><?php echo $avgResponse ? number_format($avgResponse, 2) . ' ms' : 'N/A'; ?></div>
+                    </div>
+                </div>
+            </div>
         <?php endif; ?>
 
         <?php if ($action == 'add' || $action == 'edit'): ?>
