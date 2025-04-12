@@ -52,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $errors[] = "Installation failed for an unknown reason.";
             }
         } catch (Exception $e) {
-            $errors[] = "Installation failed: " . $e->getMessage();
+            $errors[] = $e->getMessage();
         }
     }
 }

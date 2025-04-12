@@ -6,6 +6,27 @@ class Installer
     public function install($adminUser, $adminPass, $adminEmail, $host, $name, $user, $pass, $smtpHost, $smtpPort, $smtpUser, $smtpPass)
     {
         try {
+            try {
+                $testDb = new PDO("mysql:host=$host;dbname=$name", $user, $pass);
+                $testDb->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            } catch (PDOException $e) {
+                $errorMessage = "Database connection test failed: " . $e->getMessage();
+
+                if ($e->getCode() == 2002) {
+                    $errorMessage = "Cannot connect to database server at '$host'. Please verify the hostname is correct and the server is running.";
+                } elseif ($e->getCode() == 1045) {
+                    $errorMessage = "Access denied to database. Please verify your username and password.";
+                } elseif ($e->getCode() == 1049) {
+                    $errorMessage = "Database '$name' does not exist. Please create it first or check the name.";
+                } elseif ($e->getCode() == 1044) {
+                    $errorMessage = "Access denied for user '$user' to database '$name'. This could mean either: 
+                    1) The database '$name' doesn't exist (verify the database name is correct)
+                    2) The user '$user' doesn't have sufficient permissions to access this database";
+                }
+
+                throw new Exception($errorMessage);
+            }
+
             $this->writeConfigFile($host, $name, $user, $pass);
 
             require_once 'config/database.php';
@@ -22,7 +43,7 @@ class Installer
             return true;
         } catch (Exception $e) {
             error_log("Installation failed: " . $e->getMessage());
-            throw new Exception("Installation failed: " . $e->getMessage());
+            throw new Exception($e->getMessage());
         }
     }
 
@@ -37,7 +58,7 @@ class Installer
 
         $configPath = __DIR__ . '/../config/database.php';
         if (file_put_contents($configPath, $configContent) === false) {
-            throw new Exception("Unable to write config file");
+            throw new Exception("Unable to write config file. Please make sure the config directory is writable.");
         }
     }
 
