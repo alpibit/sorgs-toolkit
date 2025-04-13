@@ -181,19 +181,19 @@ if (isset($_GET['message'])) {
                 <div class="sorgs-stats">
                     <div class="sorgs-stat-card sorgs-stat-total">
                         <h3>Total Monitors</h3>
-                        <div class="value"><?php echo number_format($stats['total']); ?></div>
+                        <div class="value"><?php echo number_format((float)($stats['total'] ?? 0)); ?></div>
                     </div>
                     <div class="sorgs-stat-card sorgs-stat-up">
                         <h3>Up</h3>
-                        <div class="value"><?php echo number_format($stats['up']); ?></div>
+                        <div class="value"><?php echo number_format((float)($stats['up'] ?? 0)); ?></div>
                     </div>
                     <div class="sorgs-stat-card sorgs-stat-down">
                         <h3>Down</h3>
-                        <div class="value"><?php echo number_format($stats['down']); ?></div>
+                        <div class="value"><?php echo number_format((float)($stats['down'] ?? 0)); ?></div>
                     </div>
                     <div class="sorgs-stat-card sorgs-stat-unknown">
                         <h3>Unknown</h3>
-                        <div class="value"><?php echo number_format($stats['unknown']); ?></div>
+                        <div class="value"><?php echo number_format((float)($stats['unknown'] ?? 0)); ?></div>
                     </div>
                     <div class="sorgs-stat-card sorgs-stat-response">
                         <h3>Avg. Response Time</h3>
