@@ -1,4 +1,10 @@
 <?php
+header("X-Content-Type-Options: nosniff");
+header("X-Frame-Options: DENY");
+header("X-XSS-Protection: 1; mode=block");
+header("Referrer-Policy: strict-origin-when-cross-origin");
+header("Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline';");
+
 if (!defined('CONFIG_INCLUDED')) {
     if (!file_exists(__DIR__ . '/../config/database.php')) {
         header('Location: ' . (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://')
