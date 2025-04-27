@@ -74,6 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         <?php if ($success): ?>
             <p class="sorgs-message success">Installation completed successfully! You can now start using the system.</p>
+            <a class="sorgs-button sorgs-button-primary" href="<?php echo BASE_URL; ?>/public/login.php">Go to Login</a>
         <?php else: ?>
             <?php if (!empty($errors)): ?>
                 <div class="sorgs-message error">
