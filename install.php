@@ -9,8 +9,33 @@ if (!defined('CONFIG_INCLUDED')) {
 $errors = [];
 $success = false;
 
-if (file_exists(BASE_URL . '/config/database.php')) {
-    die("The system is already installed. If you want to reinstall, please delete the config/database.php file first.");
+if (file_exists(__DIR__ . '/config/database.php')) {
+    echo '<!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Already Installed</title>
+        <link rel="stylesheet" href="' . (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://')
+        . $_SERVER['HTTP_HOST'] . '/public/assets/css/styles.css">
+        <meta http-equiv="refresh" content="15;url=' . (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://')
+        . $_SERVER['HTTP_HOST'] . '/public/login.php">
+    </head>
+    <body>
+        <div class="sorgs-container">
+            <h1>Sorgs System</h1>
+            <div class="sorgs-message error">
+                <p>The system is already installed.</p>
+                <p><strong>Reinstallation Instructions:</strong> Delete the file <code>' . __DIR__ . '/config/database.php</code>. 
+                If you want a clean reinstall, drop all tables from your existing database or create a new database.</p>
+            </div>
+            <p>If you just want to use the existing installation, you can proceed to login:</p>
+            <a class="sorgs-button sorgs-button-primary" href="' . (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://')
+        . $_SERVER['HTTP_HOST'] . '/public/login.php">Go to Login</a>
+        </div>
+    </body>
+    </html>';
+    exit;
 }
 
 
