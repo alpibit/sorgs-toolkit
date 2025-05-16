@@ -109,4 +109,14 @@ class TelegramNotifier
         $testMessage = "🔔 Test notification from " . APP_NAME . " Uptime Monitor";
         return $this->sendMessage($testMessage);
     }
+
+    /**
+     * Check if a bot token is configured
+     * 
+     * @return bool True if the bot token is configured, false otherwise
+     */
+    public function isBotTokenConfigured()
+    {
+        return !empty($this->botToken) && $this->botToken !== 'test';
+    }
 }

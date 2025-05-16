@@ -1,4 +1,12 @@
 <?php
+ob_start();
+
+// Disable error display in production
+if (!defined('DEBUG_MODE') || DEBUG_MODE !== true) {
+    ini_set('display_errors', 0);
+    ini_set('log_errors', 1);
+}
+
 if (!defined('CONFIG_INCLUDED')) {
     if (!file_exists(__DIR__ . '/../config/database.php')) {
         header('Location: ' . (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://')

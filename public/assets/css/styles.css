@@ -242,7 +242,6 @@ tr:nth-child(even) {
     transition: background-color 0.3s ease;
 }
 
-
 .sorgs-button-small {
     padding: 4px 8px;
     font-size: 12px;
@@ -351,4 +350,56 @@ tr:nth-child(even) {
         grid-template-columns: repeat(5, 1fr);
         /* 5 columns on large screens */
     }
+}
+
+/* SSL Certificate Status Styles */
+.sorgs-ssl-ok {
+    color: var(--success-color);
+    font-weight: bold;
+}
+
+.sorgs-ssl-warning {
+    color: #ff9800;
+    font-weight: bold;
+}
+
+.sorgs-ssl-critical {
+    color: var(--error-color);
+    font-weight: bold;
+    animation: pulse 2s infinite;
+}
+
+.sorgs-ssl-expired {
+    color: var(--error-color);
+    font-weight: bold;
+    text-decoration: underline;
+}
+
+.sorgs-ssl-unknown {
+    color: #999;
+    font-style: italic;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.6;
+    }
+    100% {
+        opacity: 1;
+    }
+}
+
+/* Filter Options Styles */
+.sorgs-filter-options {
+    margin: 1rem 0;
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.sorgs-filter-options .sorgs-button {
+    margin: 0;
 }

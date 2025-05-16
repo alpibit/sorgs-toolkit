@@ -9,6 +9,12 @@ class Email
             error_log("SMTP settings are incomplete. Unable to send alert email.");
             return false;
         }
+        
+        // For new installations or test environments, avoid sending emails with dummy settings
+        if ($settings['smtp_host'] === 'test' || $settings['smtp_host'] === 'localhost') {
+            error_log("Skipping email alert - SMTP host is set to '{$settings['smtp_host']}'. Configure proper SMTP settings.");
+            return true; // Return true to avoid flooding logs during initial setup
+        }
 
         $smtp = new SmtpClient(
             $settings['smtp_host'],
@@ -17,7 +23,8 @@ class Email
             $settings['smtp_pass']
         );
 
-        $smtp->setDebug(true);
+        // Only enable debug in development environments
+        $smtp->setDebug(defined('DEBUG_MODE') && DEBUG_MODE === true);
 
         try {
             $smtp->connect();
@@ -35,7 +42,27 @@ class Email
             if (!empty($result['error'])) {
                 $body .= "Error: {$result['error']}\r\n";
             }
-            $body .= "Last Check Time: " . date('Y-m-d H:i:s') . "\r\n";
+            
+            // Add SSL certificate information if available
+            if (isset($result['ssl_info']) && !empty($result['ssl_info'])) {
+                $body .= "\r\nSSL Certificate Information:\r\n";
+                $body .= "Issued To: {$result['ssl_info']['subject']}\r\n";
+                $body .= "Issued By: {$result['ssl_info']['issuer']}\r\n";
+                $body .= "Valid From: {$result['ssl_info']['valid_from']}\r\n";
+                $body .= "Valid Until: {$result['ssl_info']['valid_to']}\r\n";
+                
+                // Calculate days until expiry
+                if (isset($result['ssl_info']['valid_to_time'])) {
+                    $daysRemaining = ceil(($result['ssl_info']['valid_to_time'] - time()) / (60 * 60 * 24));
+                    $body .= "Days Until Expiry: {$daysRemaining}\r\n";
+                    
+                    if ($daysRemaining <= 30) {
+                        $body .= "\r\n⚠️ WARNING: Certificate expires in {$daysRemaining} days! ⚠️\r\n";
+                    }
+                }
+            }
+            
+            $body .= "\r\nLast Check Time: " . date('Y-m-d H:i:s') . "\r\n";
             $body .= "Please check and take necessary action.";
 
             $smtp->sendMail($from, $to, $subject, $body);

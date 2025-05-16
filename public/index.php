@@ -1,4 +1,12 @@
 <?php
+ob_start();
+
+// Disable error display in production
+if (!defined('DEBUG_MODE') || DEBUG_MODE !== true) {
+    ini_set('display_errors', 0);
+    ini_set('log_errors', 1);
+}
+
 header("X-Content-Type-Options: nosniff");
 header("X-Frame-Options: DENY");
 header("X-XSS-Protection: 1; mode=block");
@@ -116,7 +124,15 @@ switch ($action) {
                     'http_code' => 404,
                     'response_time' => 1000,
                     'download_size' => 0,
-                    'error' => null
+                    'error' => null,
+                    'ssl_info' => [
+                        'subject' => 'example.com',
+                        'issuer' => 'Let\'s Encrypt Authority X3',
+                        'valid_from' => date('Y-m-d H:i:s', strtotime('-3 months')),
+                        'valid_to' => date('Y-m-d H:i:s', strtotime('+20 days')),
+                        'valid_from_time' => strtotime('-3 months'),
+                        'valid_to_time' => strtotime('+20 days')
+                    ]
                 ];
                 if ($monitor->sendAlert($monitorData, $testResult)) {
                     $message = "Test notifications sent successfully for monitor '{$monitorData['name']}'.";
@@ -132,7 +148,23 @@ switch ($action) {
         break;
 }
 
-$monitors = $monitor->getAllMonitors();
+// Get monitors with filter
+$filter = isset($_GET['filter']) ? $_GET['filter'] : null;
+
+if ($filter === 'down') {
+    $sql = "SELECT * FROM monitors WHERE last_status = 'down'";
+    $stmt = $conn->query($sql);
+    $monitors = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} elseif ($filter === 'ssl-expiring') {
+    // Get monitors with SSL certificates expiring in the next 30 days
+    $thirtyDaysFromNow = date('Y-m-d H:i:s', strtotime('+30 days'));
+    $sql = "SELECT * FROM monitors WHERE ssl_expiry IS NOT NULL AND ssl_expiry <= :expiry_date";
+    $stmt = $conn->prepare($sql);
+    $stmt->execute([':expiry_date' => $thirtyDaysFromNow]);
+    $monitors = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} else {
+    $monitors = $monitor->getAllMonitors();
+}
 
 // Get monitor statistics
 $db = new Database();
@@ -148,6 +180,20 @@ $stats = $stmt->fetch(PDO::FETCH_ASSOC);
 // Get average response time of up monitors
 $stmt = $conn->query("SELECT AVG(last_response_time) as avg_response FROM monitors WHERE last_status = 'up'");
 $avgResponse = $stmt->fetchColumn();
+
+// Get SSL certificate expiration statistics
+$thirtyDaysFromNow = date('Y-m-d H:i:s', strtotime('+30 days'));
+$sevenDaysFromNow = date('Y-m-d H:i:s', strtotime('+7 days'));
+$now = date('Y-m-d H:i:s');
+
+$stmt = $conn->query("SELECT 
+    COUNT(*) as total_ssl,
+    SUM(CASE WHEN ssl_expiry IS NOT NULL AND ssl_expiry <= '$now' THEN 1 ELSE 0 END) as expired,
+    SUM(CASE WHEN ssl_expiry IS NOT NULL AND ssl_expiry > '$now' AND ssl_expiry <= '$sevenDaysFromNow' THEN 1 ELSE 0 END) as critical,
+    SUM(CASE WHEN ssl_expiry IS NOT NULL AND ssl_expiry > '$sevenDaysFromNow' AND ssl_expiry <= '$thirtyDaysFromNow' THEN 1 ELSE 0 END) as warning,
+    SUM(CASE WHEN ssl_expiry IS NULL OR ssl_expiry > '$thirtyDaysFromNow' THEN 1 ELSE 0 END) as ok
+    FROM monitors");
+$sslStats = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (isset($_GET['message'])) {
     $message = $_GET['message'];
@@ -181,6 +227,13 @@ if (isset($_GET['message'])) {
         <?php endif; ?>
 
         <?php if ($action != 'add' && $action != 'edit'): ?>
+            <!-- Filter Options -->
+            <div class="sorgs-filter-options">
+                <a href="<?php echo BASE_URL; ?>/public/index.php" class="sorgs-button sorgs-button-small <?php echo !isset($_GET['filter']) ? 'sorgs-button-primary' : 'sorgs-button-secondary'; ?>">All</a>
+                <a href="<?php echo BASE_URL; ?>/public/index.php?filter=down" class="sorgs-button sorgs-button-small <?php echo isset($_GET['filter']) && $_GET['filter'] === 'down' ? 'sorgs-button-primary' : 'sorgs-button-secondary'; ?>">Down</a>
+                <a href="<?php echo BASE_URL; ?>/public/index.php?filter=ssl-expiring" class="sorgs-button sorgs-button-small <?php echo isset($_GET['filter']) && $_GET['filter'] === 'ssl-expiring' ? 'sorgs-button-primary' : 'sorgs-button-secondary'; ?>">SSL Expiring</a>
+            </div>
+            
             <!-- Stats Dashboard -->
             <div class="sorgs-stats-container">
                 <h2>System Status</h2>
@@ -207,6 +260,38 @@ if (isset($_GET['message'])) {
                     </div>
                 </div>
             </div>
+            
+            <!-- SSL Certificate Status -->
+            <?php if ($sslStats['total_ssl'] > 0): ?>
+            <div class="sorgs-stats-container">
+                <h2>SSL Certificate Status</h2>
+                <div class="sorgs-stats">
+                    <div class="sorgs-stat-card <?php echo $sslStats['expired'] > 0 ? 'sorgs-stat-down' : 'sorgs-stat-up'; ?>">
+                        <h3>Expired</h3>
+                        <div class="value"><?php echo $sslStats['expired']; ?></div>
+                        <?php if ($sslStats['expired'] > 0): ?>
+                            <a href="<?php echo BASE_URL; ?>/public/index.php?filter=ssl-expiring" class="sorgs-button sorgs-button-small sorgs-button-danger">View</a>
+                        <?php endif; ?>
+                    </div>
+                    
+                    <div class="sorgs-stat-card <?php echo $sslStats['critical'] > 0 ? 'sorgs-stat-down' : 'sorgs-stat-up'; ?>">
+                        <h3>Expiring in 7 Days</h3>
+                        <div class="value"><?php echo $sslStats['critical']; ?></div>
+                        <?php if ($sslStats['critical'] > 0): ?>
+                            <a href="<?php echo BASE_URL; ?>/public/index.php?filter=ssl-expiring" class="sorgs-button sorgs-button-small sorgs-button-danger">View</a>
+                        <?php endif; ?>
+                    </div>
+                    
+                    <div class="sorgs-stat-card <?php echo $sslStats['warning'] > 0 ? 'sorgs-stat-unknown' : 'sorgs-stat-up'; ?>">
+                        <h3>Expiring in 30 Days</h3>
+                        <div class="value"><?php echo $sslStats['warning']; ?></div>
+                        <?php if ($sslStats['warning'] > 0): ?>
+                            <a href="<?php echo BASE_URL; ?>/public/index.php?filter=ssl-expiring" class="sorgs-button sorgs-button-small sorgs-button-secondary">View</a>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
         <?php endif; ?>
 
         <?php if ($action == 'add' || $action == 'edit'): ?>
@@ -268,6 +353,7 @@ if (isset($_GET['message'])) {
                         <th>Check Interval</th>
                         <th>Last Check</th>
                         <th>Status</th>
+                        <th>SSL Expiry</th>
                         <th>Notifications</th>
                         <th>Actions</th>
                     </tr>
@@ -280,6 +366,36 @@ if (isset($_GET['message'])) {
                             <td><?php echo htmlspecialchars($m['check_interval']); ?> seconds</td>
                             <td><?php echo $m['last_check_time'] ? htmlspecialchars($m['last_check_time']) : 'Never'; ?></td>
                             <td><?php echo $m['last_status'] ? htmlspecialchars(ucfirst($m['last_status'])) : 'Unknown'; ?></td>
+                            <td>
+                                <?php if (!empty($m['ssl_expiry'])): 
+                                    $expiryDate = new DateTime($m['ssl_expiry']);
+                                    $now = new DateTime();
+                                    $interval = $now->diff($expiryDate);
+                                    $daysRemaining = $interval->invert ? -$interval->days : $interval->days;
+                                    $expiryClass = '';
+                                    $expiryIcon = '';
+                                    
+                                    if ($daysRemaining <= 0) {
+                                        $expiryClass = 'sorgs-ssl-expired';
+                                        $expiryIcon = '❌';
+                                    } elseif ($daysRemaining <= 7) {
+                                        $expiryClass = 'sorgs-ssl-critical';
+                                        $expiryIcon = '🔴';
+                                    } elseif ($daysRemaining <= 30) {
+                                        $expiryClass = 'sorgs-ssl-warning';
+                                        $expiryIcon = '⚠️';
+                                    } else {
+                                        $expiryClass = 'sorgs-ssl-ok';
+                                        $expiryIcon = '✅';
+                                    }
+                                ?>
+                                    <span class="<?php echo $expiryClass; ?>" title="Issued by: <?php echo htmlspecialchars($m['ssl_issuer'] ?? 'Unknown'); ?>">
+                                        <?php echo $expiryIcon; ?> <?php echo $daysRemaining >= 0 ? $daysRemaining . ' days' : 'Expired'; ?>
+                                    </span>
+                                <?php else: ?>
+                                    <span class="sorgs-ssl-unknown">N/A</span>
+                                <?php endif; ?>
+                            </td>
                             <td>
                                 <?php if (!empty($m['notification_emails'])): ?>
                                     <div><small>📧 <?php echo htmlspecialchars($m['notification_emails']); ?></small></div>

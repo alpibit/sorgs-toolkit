@@ -61,10 +61,23 @@ class SmtpClient
 
     public function connect()
     {
-        if ($this->secure) {
-            $this->socket = fsockopen("ssl://" . $this->host, $this->port, $errno, $errstr, 30);
-        } else {
-            $this->socket = fsockopen($this->host, $this->port, $errno, $errstr, 30);
+        // Validate host before attempting connection
+        if (empty($this->host) || $this->host === 'localhost' || !filter_var($this->host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)) {
+            throw new Exception("Invalid SMTP host: " . $this->host);
+        }
+        
+        // Suppress warnings during connection attempts
+        $oldErrorReporting = error_reporting(0);
+        
+        try {
+            if ($this->secure) {
+                $this->socket = @fsockopen("ssl://" . $this->host, $this->port, $errno, $errstr, 30);
+            } else {
+                $this->socket = @fsockopen($this->host, $this->port, $errno, $errstr, 30);
+            }
+        } finally {
+            // Restore error reporting
+            error_reporting($oldErrorReporting);
         }
 
         if (!$this->socket) {
