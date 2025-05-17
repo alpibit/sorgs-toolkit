@@ -148,6 +148,10 @@ switch ($action) {
         break;
 }
 
+// Get monitor statistics
+$db = new Database();
+$conn = $db->connect();
+
 // Get monitors with filter
 $filter = isset($_GET['filter']) ? $_GET['filter'] : null;
 
@@ -165,10 +169,6 @@ if ($filter === 'down') {
 } else {
     $monitors = $monitor->getAllMonitors();
 }
-
-// Get monitor statistics
-$db = new Database();
-$conn = $db->connect();
 $stmt = $conn->query("SELECT 
     COUNT(*) as total,
     SUM(CASE WHEN last_status = 'up' THEN 1 ELSE 0 END) as up,
