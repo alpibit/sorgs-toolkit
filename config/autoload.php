@@ -1,10 +1,17 @@
 <?php
 
 spl_autoload_register(function ($className) {
-    $baseDir = __DIR__ . '/../classes/';
-    $file = $baseDir . str_replace('\\', '/', $className) . '.php';
+    $directories = [
+        __DIR__ . '/../classes/',
+        __DIR__ . '/../classes/checks/'
+    ];
 
-    if (file_exists($file)) {
-        require $file;
+    foreach ($directories as $directory) {
+        $file = $directory . str_replace('\\', '/', $className) . '.php';
+
+        if (file_exists($file)) {
+            require $file;
+            return;
+        }
     }
 });
