@@ -74,18 +74,36 @@ class User
         ]);
     }
 
+    private function getClientIp()
+    {
+        if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            $ips = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
+            return trim($ips[0]);
+        } elseif (!empty($_SERVER['HTTP_X_REAL_IP'])) {
+            return $_SERVER['HTTP_X_REAL_IP'];
+        }
+        return $_SERVER['REMOTE_ADDR'];
+    }
+
+    private function getLoginAttemptsKey()
+    {
+        return 'login_attempts_' . hash('sha256', $this->getClientIp());
+    }
+
     public function isLoginBlocked()
     {
-        if (!isset($_SESSION['login_attempts'])) {
-            $_SESSION['login_attempts'] = [
+        $key = $this->getLoginAttemptsKey();
+
+        if (!isset($_SESSION[$key])) {
+            $_SESSION[$key] = [
                 'count' => 0,
                 'first_attempt' => time(),
                 'last_attempt' => time()
             ];
         }
 
-        if (time() - $_SESSION['login_attempts']['first_attempt'] > 900) {
-            $_SESSION['login_attempts'] = [
+        if (time() - $_SESSION[$key]['first_attempt'] > 900) {
+            $_SESSION[$key] = [
                 'count' => 0,
                 'first_attempt' => time(),
                 'last_attempt' => time()
@@ -93,26 +111,29 @@ class User
             return false;
         }
 
-        return $_SESSION['login_attempts']['count'] >= 5;
+        return $_SESSION[$key]['count'] >= 5;
     }
 
     public function trackFailedLogin()
     {
-        if (!isset($_SESSION['login_attempts'])) {
-            $_SESSION['login_attempts'] = [
+        $key = $this->getLoginAttemptsKey();
+
+        if (!isset($_SESSION[$key])) {
+            $_SESSION[$key] = [
                 'count' => 0,
                 'first_attempt' => time(),
                 'last_attempt' => time()
             ];
         }
 
-        $_SESSION['login_attempts']['count']++;
-        $_SESSION['login_attempts']['last_attempt'] = time();
+        $_SESSION[$key]['count']++;
+        $_SESSION[$key]['last_attempt'] = time();
     }
 
     public function resetLoginAttempts()
     {
-        $_SESSION['login_attempts'] = [
+        $key = $this->getLoginAttemptsKey();
+        $_SESSION[$key] = [
             'count' => 0,
             'first_attempt' => time(),
             'last_attempt' => time()
