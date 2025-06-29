@@ -16,17 +16,19 @@ VALUES
     ('time_format', 'H:i:s'),
     ('check_interval', '300'),
     ('notification_email', ''),
+    ('admin_email', ''),
     ('installed', 'false'),
     ('smtp_host', ''),
     ('smtp_port', ''),
     ('smtp_user', ''),
     ('smtp_pass', ''),
     ('telegram_bot_token', ''),
-    ('telegram_default_chat_id', '') ON DUPLICATE KEY
+    ('telegram_default_chat_id', ''),
+    ('alert_cooldown', '3600') ON DUPLICATE KEY
 UPDATE
     `setting_value` =
 VALUES
-(`setting_value`);
+    (`setting_value`);
 
 CREATE INDEX idx_settings_updated_at ON `settings` (`updated_at`);
 

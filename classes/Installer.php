@@ -109,7 +109,9 @@ class Installer
             ['check_interval', '300'],
             ['admin_email', ''],
             ['installed', 'false'],
-            ['alert_cooldown', '3600']
+            ['alert_cooldown', '3600'],
+            ['telegram_bot_token', ''],
+            ['telegram_default_chat_id', '']
         ];
 
         foreach ($defaultSettings as $setting) {

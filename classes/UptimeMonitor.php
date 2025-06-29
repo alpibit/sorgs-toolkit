@@ -10,7 +10,7 @@ class UptimeMonitor
             $db = new Database();
         }
         $this->db = $db->connect();
-        
+
         $this->ensureSchema();
     }
 
@@ -84,12 +84,23 @@ class UptimeMonitor
 
         foreach ($monitors as $monitor) {
             $result = $this->checkSite($monitor);
-            error_log("Checked {$monitor['name']}: {$result['status']} - {$result['message']}");
+            $previousStatus = $monitor['last_status'];
+            $currentStatus = $result['status'];
 
-            if ($result['status'] === 'down') {
-                $this->handleDowntime($monitor, $result);
-            } else {
-                $this->resetAlertStatus($monitor['id']);
+            error_log("Checked {$monitor['name']}: {$currentStatus} (was: {$previousStatus}) - {$result['message']}");
+
+            if ($previousStatus !== $currentStatus && $previousStatus !== null) {
+                if ($currentStatus === 'down' || $currentStatus === 'warning') {
+                    $this->handleDowntime($monitor, $result);
+                } elseif ($currentStatus === 'up' && ($previousStatus === 'down' || $previousStatus === 'warning')) {
+                    $this->handleRecovery($monitor, $result);
+                }
+            } elseif ($currentStatus === 'down' || $currentStatus === 'warning') {
+                if ($previousStatus === null) {
+                    $this->handleDowntime($monitor, $result);
+                } else {
+                    $this->handleContinuedDowntime($monitor, $result);
+                }
             }
         }
     }
@@ -130,17 +141,17 @@ class UptimeMonitor
                 'status' => 'up',
                 'message' => 'Site is up and functioning correctly.',
                 'http_code' => $info['http_code'],
-                'response_time' => round($info['total_time'] * 1000, 2), // in milliseconds
+                'response_time' => round($info['total_time'] * 1000, 2),
                 'download_size' => $info['size_download'],
                 'error' => $error,
                 'attempt' => $attempts
             ];
-            
+
             // Check SSL certificate if it's an HTTPS URL
             if (strpos($monitor['url'], 'https://') === 0) {
                 $sslInfo = $this->checkSslCertificate($monitor['url']);
                 $result['ssl_info'] = $sslInfo;
-                
+
                 // Add warning if certificate is expiring soon (within 30 days)
                 if ($sslInfo && isset($sslInfo['valid_to_time']) && $sslInfo['valid_to_time'] < strtotime('+30 days')) {
                     $daysRemaining = ceil(($sslInfo['valid_to_time'] - time()) / (60 * 60 * 24));
@@ -197,48 +208,108 @@ class UptimeMonitor
 
     private function updateMonitorStatus($monitorId, $result)
     {
+        $stmt = $this->db->prepare("SELECT last_status, downtime_start, consecutive_failures FROM monitors WHERE id = :id");
+        $stmt->execute([':id' => $monitorId]);
+        $current = $stmt->fetch(PDO::FETCH_ASSOC);
+
         // Prepare SSL certificate expiry date if available
         $sslExpiry = null;
         $sslIssuer = null;
         if (isset($result['ssl_info']) && !empty($result['ssl_info'])) {
-            $sslExpiry = isset($result['ssl_info']['valid_to_time']) ? 
+            $sslExpiry = isset($result['ssl_info']['valid_to_time']) ?
                 date('Y-m-d H:i:s', $result['ssl_info']['valid_to_time']) : null;
             $sslIssuer = $result['ssl_info']['issuer'] ?? null;
         }
-        
+
+        $downtimeStart = $current['downtime_start'];
+        $consecutiveFailures = $current['consecutive_failures'];
+
+        if ($result['status'] === 'down' || $result['status'] === 'warning') {
+            if ($current['last_status'] === 'up' || $current['last_status'] === null) {
+                $downtimeStart = date('Y-m-d H:i:s');
+                $consecutiveFailures = 1;
+            } else {
+                $consecutiveFailures++;
+            }
+        } else {
+            $downtimeStart = null;
+            $consecutiveFailures = 0;
+        }
+
         $sql = "UPDATE monitors SET 
                 last_check_time = NOW(), 
+                previous_status = :previous_status,
                 last_status = :status, 
                 last_response_time = :response_time, 
                 last_status_code = :http_code,
                 last_error = :error,
                 ssl_expiry = :ssl_expiry,
-                ssl_issuer = :ssl_issuer
+                ssl_issuer = :ssl_issuer,
+                downtime_start = :downtime_start,
+                consecutive_failures = :consecutive_failures
                 WHERE id = :id";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([
             ':id' => $monitorId,
+            ':previous_status' => $current['last_status'],
             ':status' => $result['status'],
             ':response_time' => $result['response_time'],
             ':http_code' => $result['http_code'],
             ':error' => $result['error'],
             ':ssl_expiry' => $sslExpiry,
-            ':ssl_issuer' => $sslIssuer
+            ':ssl_issuer' => $sslIssuer,
+            ':downtime_start' => $downtimeStart,
+            ':consecutive_failures' => $consecutiveFailures
         ]);
     }
 
     private function handleDowntime($monitor, $result)
     {
+        $this->sendAlert($monitor, $result, 'down');
+        $this->updateLastAlertTime($monitor['id'], time());
+    }
+
+    private function handleContinuedDowntime($monitor, $result)
+    {
         $lastAlertTime = $this->getLastAlertTime($monitor['id']);
         $currentTime = time();
 
         if ($lastAlertTime === null || ($currentTime - $lastAlertTime) >= $this->alertCooldownPeriod) {
-            $this->sendAlert($monitor, $result);
+            $result['message'] .= " (Still down after {$monitor['consecutive_failures']} checks)";
+            $this->sendAlert($monitor, $result, 'still_down');
             $this->updateLastAlertTime($monitor['id'], $currentTime);
-        } else {
-            $nextAlertTime = $lastAlertTime + $this->alertCooldownPeriod;
-            error_log("Alert for monitor '{$monitor['name']}' suppressed due to cooldown period. Next alert possible at: " . date('Y-m-d H:i:s', $nextAlertTime));
         }
+    }
+
+    private function handleRecovery($monitor, $result)
+    {
+        $downtimeDuration = $this->calculateDowntimeDuration($monitor);
+        $result['downtime_duration'] = $downtimeDuration;
+        $result['consecutive_failures'] = $monitor['consecutive_failures'];
+
+        $this->sendAlert($monitor, $result, 'recovery');
+        $this->updateLastAlertTime($monitor['id'], null);
+    }
+
+    private function calculateDowntimeDuration($monitor)
+    {
+        if (!$monitor['downtime_start']) {
+            return null;
+        }
+
+        $start = new DateTime($monitor['downtime_start']);
+        $end = new DateTime();
+        $interval = $start->diff($end);
+
+        $parts = [];
+        if ($interval->d > 0) $parts[] = $interval->d . ' day' . ($interval->d > 1 ? 's' : '');
+        if ($interval->h > 0) $parts[] = $interval->h . ' hour' . ($interval->h > 1 ? 's' : '');
+        if ($interval->i > 0) $parts[] = $interval->i . ' minute' . ($interval->i > 1 ? 's' : '');
+        if (empty($parts) || ($interval->d == 0 && $interval->h == 0)) {
+            $parts[] = $interval->s . ' second' . ($interval->s > 1 ? 's' : '');
+        }
+
+        return implode(', ', $parts);
     }
 
     private function getLastAlertTime($monitorId)
@@ -252,27 +323,40 @@ class UptimeMonitor
 
     private function updateLastAlertTime($monitorId, $time)
     {
-        $sql = "UPDATE monitors SET last_alert_time = FROM_UNIXTIME(:time) WHERE id = :id";
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute([':id' => $monitorId, ':time' => $time]);
+        if ($time === null) {
+            $sql = "UPDATE monitors SET last_alert_time = NULL WHERE id = :id";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute([':id' => $monitorId]);
+        } else {
+            $sql = "UPDATE monitors SET last_alert_time = FROM_UNIXTIME(:time) WHERE id = :id";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute([':id' => $monitorId, ':time' => $time]);
+        }
     }
 
-    private function resetAlertStatus($monitorId)
-    {
-        $sql = "UPDATE monitors SET last_alert_time = NULL WHERE id = :id";
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute([':id' => $monitorId]);
-    }
-
-    public function sendAlert($monitor, $result)
+    public function sendAlert($monitor, $result, $alertType = 'down')
     {
         $allSent = true;
 
-        // Prepare alert message (used for both email and Telegram)
         $status = ucfirst($result['status']);
-        $emoji = ($result['status'] === 'down') ? '🔴' : (($result['status'] === 'warning') ? '⚠️' : '🟢');
-        $message = "$emoji Alert for {$monitor['name']}\n\n";
-        $message .= "Status: $status\n";
+
+        if ($alertType === 'recovery') {
+            $emoji = '🟢';
+            $subject = "✅ RECOVERED: {$monitor['name']} is back online!";
+            $message = "$emoji Monitor Recovered: {$monitor['name']}\n\n";
+            $message .= "Status: ONLINE\n";
+        } elseif ($alertType === 'still_down') {
+            $emoji = '🔴';
+            $subject = "🔴 STILL DOWN: {$monitor['name']} remains offline";
+            $message = "$emoji Monitor Still Down: {$monitor['name']}\n\n";
+            $message .= "Status: $status (Ongoing Issue)\n";
+        } else {
+            $emoji = ($result['status'] === 'down') ? '🔴' : '⚠️';
+            $subject = "$emoji Alert: {$monitor['name']} is {$result['status']}!";
+            $message = "$emoji Alert for {$monitor['name']}\n\n";
+            $message .= "Status: $status\n";
+        }
+
         $message .= "URL: {$monitor['url']}\n";
         $message .= "Time: " . date('Y-m-d H:i:s') . "\n";
 
@@ -287,17 +371,24 @@ class UptimeMonitor
         if (!empty($result['error'])) {
             $message .= "Error: {$result['error']}\n";
         }
-        
+
+        if ($alertType === 'recovery' && isset($result['downtime_duration'])) {
+            $message .= "\n📊 Downtime Summary:\n";
+            $message .= "Duration: {$result['downtime_duration']}\n";
+            $message .= "Failed Checks: {$result['consecutive_failures']}\n";
+            $message .= "Recovery Time: " . date('Y-m-d H:i:s') . "\n";
+        }
+
         // Add SSL certificate information if available
         if (isset($result['ssl_info']) && !empty($result['ssl_info'])) {
             $message .= "\nSSL Certificate Information:\n";
             $message .= "Valid Until: {$result['ssl_info']['valid_to']}\n";
-            
+
             // Calculate days until expiry
             if (isset($result['ssl_info']['valid_to_time'])) {
                 $daysRemaining = ceil(($result['ssl_info']['valid_to_time'] - time()) / (60 * 60 * 24));
                 $message .= "Days Until Expiry: {$daysRemaining}\n";
-                
+
                 if ($daysRemaining <= 30) {
                     $message .= "\n⚠️ WARNING: Certificate expires in {$daysRemaining} days!\n";
                 }
@@ -317,15 +408,28 @@ class UptimeMonitor
 
         // Don't attempt email alerts if SMTP settings aren't configured properly
         $smtpConfigured = $this->isSmtpConfigured();
-        
+
         if ($smtpConfigured) {
             foreach ($uniqueEmails as $email) {
                 if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
                     try {
-                        if (Email::sendAlert($monitor, $result, $email)) {
-                            error_log("Email alert sent to $email for monitor '{$monitor['name']}'. URL: {$monitor['url']}");
+                        $emailResult = [
+                            'status' => $result['status'],
+                            'message' => $message,
+                            'http_code' => $result['http_code'] ?? null,
+                            'response_time' => $result['response_time'] ?? null,
+                            'download_size' => $result['download_size'] ?? null,
+                            'error' => $result['error'] ?? null,
+                            'ssl_info' => $result['ssl_info'] ?? null,
+                            'alert_type' => $alertType,
+                            'downtime_duration' => $result['downtime_duration'] ?? null,
+                            'consecutive_failures' => $result['consecutive_failures'] ?? null
+                        ];
+
+                        if (Email::sendAlert($monitor, $emailResult, $email, $subject)) {
+                            error_log("Email alert sent to $email for monitor '{$monitor['name']}'. Alert type: $alertType");
                         } else {
-                            error_log("Failed to send email alert to $email for monitor '{$monitor['name']}'. URL: {$monitor['url']}");
+                            error_log("Failed to send email alert to $email for monitor '{$monitor['name']}'.");
                             $allSent = false;
                         }
                     } catch (Exception $e) {
@@ -350,13 +454,13 @@ class UptimeMonitor
                     error_log("Telegram bot token not configured. Skipping Telegram alerts.");
                 } else {
                     $chatIds = array_filter(array_map('trim', explode(',', $monitor['telegram_chat_ids'])));
-    
+
                     foreach ($chatIds as $chatId) {
                         try {
                             if ($telegram->sendMessage($message, $chatId)) {
-                                error_log("Telegram alert sent to chat ID $chatId for monitor '{$monitor['name']}'. URL: {$monitor['url']}");
+                                error_log("Telegram alert sent to chat ID $chatId for monitor '{$monitor['name']}'. Alert type: $alertType");
                             } else {
-                                error_log("Failed to send Telegram alert to chat ID $chatId for monitor '{$monitor['name']}'. URL: {$monitor['url']}");
+                                error_log("Failed to send Telegram alert to chat ID $chatId for monitor '{$monitor['name']}'.");
                                 $allSent = false;
                             }
                         } catch (Exception $e) {
@@ -378,9 +482,9 @@ class UptimeMonitor
         if ($defaultChatId && !in_array($defaultChatId, explode(',', $monitor['telegram_chat_ids'] ?? ''))) {
             $telegram = new TelegramNotifier();
             if ($telegram->sendMessage($message)) {
-                error_log("Telegram alert sent to default chat ID for monitor '{$monitor['name']}'. URL: {$monitor['url']}");
+                error_log("Telegram alert sent to default chat ID for monitor '{$monitor['name']}'. Alert type: $alertType");
             } else {
-                error_log("Failed to send Telegram alert to default chat ID for monitor '{$monitor['name']}'. URL: {$monitor['url']}");
+                error_log("Failed to send Telegram alert to default chat ID for monitor '{$monitor['name']}'.");
                 $allSent = false;
             }
         }
@@ -422,11 +526,11 @@ class UptimeMonitor
             ]);
 
             $client = @stream_socket_client(
-                "ssl://$host:$port", 
-                $errno, 
-                $errstr, 
-                5, 
-                STREAM_CLIENT_CONNECT, 
+                "ssl://$host:$port",
+                $errno,
+                $errstr,
+                5,
+                STREAM_CLIENT_CONNECT,
                 $context
             );
 
@@ -474,7 +578,7 @@ class UptimeMonitor
         $stmt = $this->db->prepare("SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass')");
         $stmt->execute();
         $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
-        
+
         // Check if all required settings exist and are not empty
         $requiredSettings = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass'];
         foreach ($requiredSettings as $key) {
@@ -482,12 +586,12 @@ class UptimeMonitor
                 return false;
             }
         }
-        
+
         // Check if host is a proper hostname (not 'test' or 'localhost')
         if ($settings['smtp_host'] === 'test' || $settings['smtp_host'] === 'localhost') {
             return false;
         }
-        
+
         return true;
     }
 
@@ -498,24 +602,32 @@ class UptimeMonitor
     public function ensureSchema()
     {
         try {
-            // Check if ssl_expiry column exists
-            $sql = "SHOW COLUMNS FROM monitors LIKE 'ssl_expiry'";
-            $stmt = $this->db->query($sql);
-            
-            if ($stmt->rowCount() == 0) {
-                // Add ssl_expiry column
-                error_log("Adding ssl_expiry column to monitors table");
-                $this->db->exec("ALTER TABLE monitors ADD COLUMN ssl_expiry DATETIME NULL");
+            $columnsToAdd = [
+                'ssl_expiry' => "ALTER TABLE monitors ADD COLUMN ssl_expiry DATETIME NULL",
+                'ssl_issuer' => "ALTER TABLE monitors ADD COLUMN ssl_issuer VARCHAR(255) NULL",
+                'previous_status' => "ALTER TABLE monitors ADD COLUMN previous_status ENUM('up', 'down', 'warning') NULL",
+                'downtime_start' => "ALTER TABLE monitors ADD COLUMN downtime_start TIMESTAMP NULL DEFAULT NULL",
+                'consecutive_failures' => "ALTER TABLE monitors ADD COLUMN consecutive_failures INT(11) DEFAULT 0"
+            ];
+
+            foreach ($columnsToAdd as $column => $alterQuery) {
+                $sql = "SHOW COLUMNS FROM monitors LIKE '$column'";
+                $stmt = $this->db->query($sql);
+
+                if ($stmt->rowCount() == 0) {
+                    error_log("Adding $column column to monitors table");
+                    $this->db->exec($alterQuery);
+                }
             }
-            
-            // Check if ssl_issuer column exists
-            $sql = "SHOW COLUMNS FROM monitors LIKE 'ssl_issuer'";
+
+            // Update last_status column to include 'warning' status if not already present
+            $sql = "SHOW COLUMNS FROM monitors WHERE Field = 'last_status'";
             $stmt = $this->db->query($sql);
-            
-            if ($stmt->rowCount() == 0) {
-                // Add ssl_issuer column
-                error_log("Adding ssl_issuer column to monitors table");
-                $this->db->exec("ALTER TABLE monitors ADD COLUMN ssl_issuer VARCHAR(255) NULL");
+            $column = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($column && strpos($column['Type'], 'warning') === false) {
+                error_log("Updating last_status column to include 'warning' status");
+                $this->db->exec("ALTER TABLE monitors MODIFY COLUMN last_status ENUM('up', 'down', 'warning') NULL");
             }
         } catch (Exception $e) {
             error_log("Error ensuring schema: " . $e->getMessage());

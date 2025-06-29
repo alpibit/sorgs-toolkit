@@ -173,6 +173,7 @@ $stmt = $conn->query("SELECT
     COUNT(*) as total,
     SUM(CASE WHEN last_status = 'up' THEN 1 ELSE 0 END) as up,
     SUM(CASE WHEN last_status = 'down' THEN 1 ELSE 0 END) as down,
+    SUM(CASE WHEN last_status = 'warning' THEN 1 ELSE 0 END) as warning,
     SUM(CASE WHEN last_status IS NULL THEN 1 ELSE 0 END) as unknown
     FROM monitors");
 $stats = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -233,7 +234,7 @@ if (isset($_GET['message'])) {
                 <a href="<?php echo BASE_URL; ?>/public/index.php?filter=down" class="sorgs-button sorgs-button-small <?php echo isset($_GET['filter']) && $_GET['filter'] === 'down' ? 'sorgs-button-primary' : 'sorgs-button-secondary'; ?>">Down</a>
                 <a href="<?php echo BASE_URL; ?>/public/index.php?filter=ssl-expiring" class="sorgs-button sorgs-button-small <?php echo isset($_GET['filter']) && $_GET['filter'] === 'ssl-expiring' ? 'sorgs-button-primary' : 'sorgs-button-secondary'; ?>">SSL Expiring</a>
             </div>
-            
+
             <!-- Stats Dashboard -->
             <div class="sorgs-stats-container">
                 <h2>System Status</h2>
@@ -251,8 +252,8 @@ if (isset($_GET['message'])) {
                         <div class="value"><?php echo number_format((float)($stats['down'] ?? 0)); ?></div>
                     </div>
                     <div class="sorgs-stat-card sorgs-stat-unknown">
-                        <h3>Unknown</h3>
-                        <div class="value"><?php echo number_format((float)($stats['unknown'] ?? 0)); ?></div>
+                        <h3>Warning</h3>
+                        <div class="value"><?php echo number_format((float)($stats['warning'] ?? 0)); ?></div>
                     </div>
                     <div class="sorgs-stat-card sorgs-stat-response">
                         <h3>Avg. Response Time</h3>
@@ -260,37 +261,37 @@ if (isset($_GET['message'])) {
                     </div>
                 </div>
             </div>
-            
+
             <!-- SSL Certificate Status -->
             <?php if ($sslStats['total_ssl'] > 0): ?>
-            <div class="sorgs-stats-container">
-                <h2>SSL Certificate Status</h2>
-                <div class="sorgs-stats">
-                    <div class="sorgs-stat-card <?php echo $sslStats['expired'] > 0 ? 'sorgs-stat-down' : 'sorgs-stat-up'; ?>">
-                        <h3>Expired</h3>
-                        <div class="value"><?php echo $sslStats['expired']; ?></div>
-                        <?php if ($sslStats['expired'] > 0): ?>
-                            <a href="<?php echo BASE_URL; ?>/public/index.php?filter=ssl-expiring" class="sorgs-button sorgs-button-small sorgs-button-danger">View</a>
-                        <?php endif; ?>
-                    </div>
-                    
-                    <div class="sorgs-stat-card <?php echo $sslStats['critical'] > 0 ? 'sorgs-stat-down' : 'sorgs-stat-up'; ?>">
-                        <h3>Expiring in 7 Days</h3>
-                        <div class="value"><?php echo $sslStats['critical']; ?></div>
-                        <?php if ($sslStats['critical'] > 0): ?>
-                            <a href="<?php echo BASE_URL; ?>/public/index.php?filter=ssl-expiring" class="sorgs-button sorgs-button-small sorgs-button-danger">View</a>
-                        <?php endif; ?>
-                    </div>
-                    
-                    <div class="sorgs-stat-card <?php echo $sslStats['warning'] > 0 ? 'sorgs-stat-unknown' : 'sorgs-stat-up'; ?>">
-                        <h3>Expiring in 30 Days</h3>
-                        <div class="value"><?php echo $sslStats['warning']; ?></div>
-                        <?php if ($sslStats['warning'] > 0): ?>
-                            <a href="<?php echo BASE_URL; ?>/public/index.php?filter=ssl-expiring" class="sorgs-button sorgs-button-small sorgs-button-secondary">View</a>
-                        <?php endif; ?>
+                <div class="sorgs-stats-container">
+                    <h2>SSL Certificate Status</h2>
+                    <div class="sorgs-stats">
+                        <div class="sorgs-stat-card <?php echo $sslStats['expired'] > 0 ? 'sorgs-stat-down' : 'sorgs-stat-up'; ?>">
+                            <h3>Expired</h3>
+                            <div class="value"><?php echo $sslStats['expired']; ?></div>
+                            <?php if ($sslStats['expired'] > 0): ?>
+                                <a href="<?php echo BASE_URL; ?>/public/index.php?filter=ssl-expiring" class="sorgs-button sorgs-button-small sorgs-button-danger">View</a>
+                            <?php endif; ?>
+                        </div>
+
+                        <div class="sorgs-stat-card <?php echo $sslStats['critical'] > 0 ? 'sorgs-stat-down' : 'sorgs-stat-up'; ?>">
+                            <h3>Expiring in 7 Days</h3>
+                            <div class="value"><?php echo $sslStats['critical']; ?></div>
+                            <?php if ($sslStats['critical'] > 0): ?>
+                                <a href="<?php echo BASE_URL; ?>/public/index.php?filter=ssl-expiring" class="sorgs-button sorgs-button-small sorgs-button-danger">View</a>
+                            <?php endif; ?>
+                        </div>
+
+                        <div class="sorgs-stat-card <?php echo $sslStats['warning'] > 0 ? 'sorgs-stat-unknown' : 'sorgs-stat-up'; ?>">
+                            <h3>Expiring in 30 Days</h3>
+                            <div class="value"><?php echo $sslStats['warning']; ?></div>
+                            <?php if ($sslStats['warning'] > 0): ?>
+                                <a href="<?php echo BASE_URL; ?>/public/index.php?filter=ssl-expiring" class="sorgs-button sorgs-button-small sorgs-button-secondary">View</a>
+                            <?php endif; ?>
+                        </div>
                     </div>
                 </div>
-            </div>
             <?php endif; ?>
         <?php endif; ?>
 
@@ -353,6 +354,7 @@ if (isset($_GET['message'])) {
                         <th>Check Interval</th>
                         <th>Last Check</th>
                         <th>Status</th>
+                        <th>Downtime</th>
                         <th>SSL Expiry</th>
                         <th>Notifications</th>
                         <th>Actions</th>
@@ -365,16 +367,65 @@ if (isset($_GET['message'])) {
                             <td><?php echo htmlspecialchars($m['url']); ?></td>
                             <td><?php echo htmlspecialchars($m['check_interval']); ?> seconds</td>
                             <td><?php echo $m['last_check_time'] ? htmlspecialchars($m['last_check_time']) : 'Never'; ?></td>
-                            <td><?php echo $m['last_status'] ? htmlspecialchars(ucfirst($m['last_status'])) : 'Unknown'; ?></td>
                             <td>
-                                <?php if (!empty($m['ssl_expiry'])): 
+                                <?php
+                                $statusClass = '';
+                                $statusIcon = '';
+                                switch ($m['last_status']) {
+                                    case 'up':
+                                        $statusClass = 'sorgs-status-up';
+                                        $statusIcon = '🟢';
+                                        break;
+                                    case 'down':
+                                        $statusClass = 'sorgs-status-down';
+                                        $statusIcon = '🔴';
+                                        break;
+                                    case 'warning':
+                                        $statusClass = 'sorgs-status-warning';
+                                        $statusIcon = '⚠️';
+                                        break;
+                                    default:
+                                        $statusClass = 'sorgs-status-unknown';
+                                        $statusIcon = '⚪';
+                                }
+                                ?>
+                                <span class="<?php echo $statusClass; ?>">
+                                    <?php echo $statusIcon; ?> <?php echo $m['last_status'] ? htmlspecialchars(ucfirst($m['last_status'])) : 'Unknown'; ?>
+                                </span>
+                            </td>
+                            <td>
+                                <?php if ($m['downtime_start'] && ($m['last_status'] === 'down' || $m['last_status'] === 'warning')):
+                                    $start = new DateTime($m['downtime_start']);
+                                    $now = new DateTime();
+                                    $interval = $start->diff($now);
+                                    $downtimeStr = '';
+
+                                    if ($interval->d > 0) {
+                                        $downtimeStr = $interval->d . 'd ' . $interval->h . 'h';
+                                    } elseif ($interval->h > 0) {
+                                        $downtimeStr = $interval->h . 'h ' . $interval->i . 'm';
+                                    } elseif ($interval->i > 0) {
+                                        $downtimeStr = $interval->i . 'm';
+                                    } else {
+                                        $downtimeStr = $interval->s . 's';
+                                    }
+                                ?>
+                                    <span class="sorgs-downtime">
+                                        🕒 <?php echo $downtimeStr; ?> (<?php echo $m['consecutive_failures']; ?> checks)
+                                    </span>
+                                <?php else: ?>
+                                    <span class="sorgs-uptime">-</span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <?php if (!empty($m['ssl_expiry'])):
                                     $expiryDate = new DateTime($m['ssl_expiry']);
                                     $now = new DateTime();
                                     $interval = $now->diff($expiryDate);
                                     $daysRemaining = $interval->invert ? -$interval->days : $interval->days;
                                     $expiryClass = '';
                                     $expiryIcon = '';
-                                    
+
                                     if ($daysRemaining <= 0) {
                                         $expiryClass = 'sorgs-ssl-expired';
                                         $expiryIcon = '❌';

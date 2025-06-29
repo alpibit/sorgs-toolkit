@@ -5,6 +5,7 @@
     --text-color: #333333;
     --error-color: #e74c3c;
     --success-color: #2ecc71;
+    --warning-color: #f39c12;
     --border-color: #e0e0e0;
     --box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
@@ -384,9 +385,11 @@ tr:nth-child(even) {
     0% {
         opacity: 1;
     }
+
     50% {
         opacity: 0.6;
     }
+
     100% {
         opacity: 1;
     }
@@ -402,4 +405,35 @@ tr:nth-child(even) {
 
 .sorgs-filter-options .sorgs-button {
     margin: 0;
+}
+
+.sorgs-status-up {
+    color: var(--success-color);
+    font-weight: bold;
+}
+
+.sorgs-status-down {
+    color: var(--error-color);
+    font-weight: bold;
+}
+
+.sorgs-status-warning {
+    color: var(--warning-color);
+    font-weight: bold;
+}
+
+.sorgs-status-unknown {
+    color: #6c757d;
+    font-style: italic;
+}
+
+.sorgs-downtime {
+    color: var(--error-color);
+    font-size: 0.9em;
+    font-weight: 600;
+}
+
+.sorgs-uptime {
+    color: #6c757d;
+    font-size: 0.9em;
 }
