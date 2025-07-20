@@ -1,4 +1,16 @@
 <?php
+$lockFile = __DIR__ . '/cron.lock';
+$lockFilePointer = fopen($lockFile, 'w');
+
+if (!$lockFilePointer) {
+    die('Cannot create lock file');
+}
+
+if (!flock($lockFilePointer, LOCK_EX | LOCK_NB)) {
+    echo "Cron job is already running. Exiting.\n";
+    exit;
+}
+
 if (!file_exists(__DIR__ . '/config/database.php')) {
     echo "Database configuration not found. Please run the installer first.\n";
     exit(1);
@@ -53,3 +65,7 @@ try {
 }
 
 echo "Cron job completed at " . date('Y-m-d H:i:s') . "\n";
+
+flock($lockFilePointer, LOCK_UN);
+fclose($lockFilePointer);
+unlink($lockFile);
