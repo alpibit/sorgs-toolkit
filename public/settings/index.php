@@ -180,22 +180,7 @@ error_log("Current settings: " . print_r($settings, true));
         </form>
     </div>
 
-    <script>
-        function testTelegramConnection() {
-            fetch('test_telegram.php')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        alert('Telegram test message sent successfully!');
-                    } else {
-                        alert('Failed to send Telegram test message: ' + data.error);
-                    }
-                })
-                .catch(error => {
-                    alert('Error testing Telegram connection: ' + error);
-                });
-        }
-    </script>
+    <script src="<?php echo BASE_URL; ?>/public/assets/js/scripts.js"></script>
 </body>
 
 </html>
