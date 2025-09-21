@@ -33,6 +33,7 @@ class Installer
 
             $db = new Database();
             $this->conn = $db->connect();
+            $this->checkIfTablesExist();
 
             $this->setupTables();
             $this->setDefaultSettings();
@@ -43,7 +44,25 @@ class Installer
             return true;
         } catch (Exception $e) {
             error_log("Installation failed: " . $e->getMessage());
+
+            $configPath = __DIR__ . '/../config/database.php';
+            if (file_exists($configPath)) {
+                unlink($configPath);
+            }
             throw new Exception($e->getMessage());
+        }
+    }
+
+    private function checkIfTablesExist()
+    {
+        $tablesToCheck = ['monitors', 'settings', 'users'];
+        foreach ($tablesToCheck as $table) {
+            try {
+                $stmt = $this->conn->query("SELECT 1 FROM `$table` LIMIT 1");
+            } catch (PDOException $e) {
+                continue;
+            }
+            throw new Exception("The database already contains a table named '$table'. It seems an installation already exists. Please use a different database, or clear the existing tables.");
         }
     }
 
