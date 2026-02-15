@@ -102,4 +102,4 @@ Found a vulnerability? Please do NOT open an issue. Email `security@pirags.com` 
 ## License
 
 MIT License
-Copyright (c) 2025 Aleksandrs Pirags
+Copyright (c) 2026 Aleksandrs Pirags
