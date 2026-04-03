@@ -49,6 +49,12 @@ http://yourdomain.com/install.php
 
 ## Configuration
 
+### Debug Logging
+
+- Debug logging is disabled by default.
+- Set `APP_DEBUG=1` in the PHP runtime environment to enable verbose development logging.
+- Leave `APP_DEBUG` unset in production so secrets and notification payloads are not logged verbosely.
+
 ### Email Notifications
 
 - Configure SMTP settings in the admin panel

@@ -8,6 +8,7 @@ class SmtpClient
     private $socket;
     private $debug = false;
     private $secure = false;
+    private $redactedAuthPayloads = 0;
 
     public function __construct($host, $port, $username, $password)
     {
@@ -30,9 +31,40 @@ class SmtpClient
         }
     }
 
+    private function formatCommandForLog($command)
+    {
+        if ($this->redactedAuthPayloads > 0) {
+            $this->redactedAuthPayloads--;
+            return 'SEND: [REDACTED AUTH PAYLOAD]';
+        }
+
+        if ($command === 'AUTH LOGIN') {
+            $this->redactedAuthPayloads = 2;
+            return 'SEND: AUTH LOGIN';
+        }
+
+        if ($command === 'DATA') {
+            return 'SEND: DATA';
+        }
+
+        if (strpos($command, "\r\n") !== false) {
+            return 'SEND: [SMTP MESSAGE PAYLOAD OMITTED]';
+        }
+
+        if (strpos($command, 'MAIL FROM:') === 0) {
+            return 'SEND: MAIL FROM:<redacted>';
+        }
+
+        if (strpos($command, 'RCPT TO:') === 0) {
+            return 'SEND: RCPT TO:<redacted>';
+        }
+
+        return 'SEND: ' . $command;
+    }
+
     private function send($command)
     {
-        $this->log("SEND: $command");
+        $this->log($this->formatCommandForLog($command));
         if (fwrite($this->socket, $command . "\r\n") === false) {
             throw new Exception("Failed to send command: $command");
         }

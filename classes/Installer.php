@@ -43,7 +43,11 @@ class Installer
 
             return true;
         } catch (Exception $e) {
-            error_log("Installation failed: " . $e->getMessage());
+            $errorMessage = 'Installation failed.';
+            if (function_exists('app_debug_enabled') && app_debug_enabled()) {
+                $errorMessage .= ' ' . $e->getMessage();
+            }
+            error_log($errorMessage);
 
             $configPath = __DIR__ . '/../config/database.php';
             if (file_exists($configPath)) {

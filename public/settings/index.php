@@ -25,7 +25,7 @@ if (!$user->isLoggedIn() || !$user->isAdmin()) {
 $message = '';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    error_log("Processing settings update. POST data: " . print_r($_POST, true));
+    app_log_debug('Processing settings update request.');
 
     $conn = $db->connect();
 
@@ -45,12 +45,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     foreach ($settingsToUpdate as $setting) {
         if (isset($_POST[$setting])) {
             $value = $_POST[$setting];
-            error_log("Updating setting $setting with value: $value");
+            app_log_debug("Updating setting '$setting'.");
             $stmt = $conn->prepare("UPDATE settings SET setting_value = ? WHERE setting_key = ?");
             if ($stmt->execute([$value, $setting])) {
-                error_log("Successfully updated $setting");
+                app_log_debug("Successfully updated setting '$setting'.");
             } else {
-                error_log("Failed to update $setting: " . print_r($stmt->errorInfo(), true));
+                error_log("Failed to update setting '$setting'.");
+                app_log_debug("Setting update error info for '$setting': " . json_encode($stmt->errorInfo()));
             }
         }
     }
@@ -59,9 +60,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (!empty($_POST['smtp_pass'])) {
         $stmt = $conn->prepare("UPDATE settings SET setting_value = ? WHERE setting_key = 'smtp_pass'");
         if ($stmt->execute([$_POST['smtp_pass']])) {
-            error_log("Successfully updated SMTP password");
+            app_log_debug('Successfully updated SMTP password setting.');
         } else {
-            error_log("Failed to update SMTP password: " . print_r($stmt->errorInfo(), true));
+            error_log('Failed to update SMTP password setting.');
+            app_log_debug('SMTP password update error info: ' . json_encode($stmt->errorInfo()));
         }
     }
 
@@ -72,9 +74,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 $conn = $db->connect();
 $stmt = $conn->query("SELECT setting_key, setting_value FROM settings");
 $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
-
-// Debug log current settings
-error_log("Current settings: " . print_r($settings, true));
 ?>
 
 <!DOCTYPE html>

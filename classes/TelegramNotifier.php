@@ -20,9 +20,10 @@ class TelegramNotifier
             $this->defaultChatId = $defaultChatId;
         }
 
-        // Debug log the configuration
-        error_log("TelegramNotifier initialized with bot token: " . ($this->botToken ? 'Set' : 'Not set'));
-        error_log("TelegramNotifier default chat ID: " . ($this->defaultChatId ?: 'Not set'));
+        app_log_debug('Telegram notifier initialized.');
+        if (!empty($this->defaultChatId)) {
+            app_log_debug('Telegram notifier default chat configured: ' . app_mask_value($this->defaultChatId));
+        }
     }
 
     public function sendMessage($message, $chatId = null)
@@ -45,9 +46,13 @@ class TelegramNotifier
             'parse_mode' => 'HTML'
         ];
 
-        // Debug log the request
-        error_log("Sending Telegram notification to URL: " . $url);
-        error_log("Telegram message data: " . print_r($data, true));
+        app_log_debug(
+            'Sending Telegram notification to chat '
+            . app_mask_value($chatId)
+            . ' (message length: '
+            . strlen($message)
+            . ' bytes).'
+        );
 
         $options = [
             'http' => [
@@ -85,7 +90,7 @@ class TelegramNotifier
             return false;
         }
 
-        error_log("Telegram notification sent successfully");
+        app_log_debug('Telegram notification sent successfully to chat ' . app_mask_value($chatId));
         return true;
     }
 

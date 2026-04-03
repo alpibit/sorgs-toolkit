@@ -22,6 +22,7 @@ class Email
             $settings['smtp_user'],
             $settings['smtp_pass']
         );
+        $maskedRecipient = app_mask_email($to);
 
         // Only enable debug in development environments
         $smtp->setDebug(defined('DEBUG_MODE') && DEBUG_MODE === true);
@@ -29,7 +30,7 @@ class Email
         try {
             $smtp->connect();
 
-            $from = 'noreply@' . $_SERVER['HTTP_HOST'];
+            $from = 'noreply@' . app_current_host();
 
             if ($subject === null) {
                 $subject = "Alert: {$monitor['name']} is {$result['status']}!";
@@ -96,10 +97,14 @@ class Email
             $smtp->sendMail($from, $to, $subject, $body);
             $smtp->quit();
 
-            error_log("Alert email sent successfully to $to for monitor: {$monitor['name']} (Type: $alertType)");
+            app_log_debug("Alert email sent successfully to $maskedRecipient for monitor: {$monitor['name']} (Type: $alertType)");
             return true;
         } catch (Exception $e) {
-            error_log("Failed to send alert email to $to. Error: " . $e->getMessage());
+            $errorMessage = "Failed to send alert email to $maskedRecipient for monitor: {$monitor['name']}.";
+            if (app_debug_enabled()) {
+                $errorMessage .= ' ' . $e->getMessage();
+            }
+            error_log($errorMessage);
             return false;
         }
     }

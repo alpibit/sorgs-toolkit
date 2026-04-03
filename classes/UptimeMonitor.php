@@ -427,17 +427,28 @@ class UptimeMonitor
                         ];
 
                         if (Email::sendAlert($monitor, $emailResult, $email, $subject)) {
-                            error_log("Email alert sent to $email for monitor '{$monitor['name']}'. Alert type: $alertType");
+                            app_log_debug(
+                                "Email alert sent to " . app_mask_email($email)
+                                . " for monitor '{$monitor['name']}'. Alert type: $alertType"
+                            );
                         } else {
-                            error_log("Failed to send email alert to $email for monitor '{$monitor['name']}'.");
+                            error_log(
+                                "Failed to send email alert to " . app_mask_email($email)
+                                . " for monitor '{$monitor['name']}'."
+                            );
                             $allSent = false;
                         }
                     } catch (Exception $e) {
-                        error_log("Error sending email alert to $email: " . $e->getMessage());
+                        $errorMessage = "Error sending email alert to " . app_mask_email($email)
+                            . " for monitor '{$monitor['name']}'.";
+                        if (app_debug_enabled()) {
+                            $errorMessage .= ' ' . $e->getMessage();
+                        }
+                        error_log($errorMessage);
                         $allSent = false;
                     }
                 } else {
-                    error_log("Invalid email address: $email. Skipping alert for monitor '{$monitor['name']}'.");
+                    error_log("Invalid email address provided for monitor '{$monitor['name']}'.");
                     $allSent = false;
                 }
             }
@@ -458,13 +469,24 @@ class UptimeMonitor
                     foreach ($chatIds as $chatId) {
                         try {
                             if ($telegram->sendMessage($message, $chatId)) {
-                                error_log("Telegram alert sent to chat ID $chatId for monitor '{$monitor['name']}'. Alert type: $alertType");
+                                app_log_debug(
+                                    "Telegram alert sent to chat " . app_mask_value($chatId)
+                                    . " for monitor '{$monitor['name']}'. Alert type: $alertType"
+                                );
                             } else {
-                                error_log("Failed to send Telegram alert to chat ID $chatId for monitor '{$monitor['name']}'.");
+                                error_log(
+                                    "Failed to send Telegram alert to chat " . app_mask_value($chatId)
+                                    . " for monitor '{$monitor['name']}'."
+                                );
                                 $allSent = false;
                             }
                         } catch (Exception $e) {
-                            error_log("Error sending Telegram alert to chat ID $chatId: " . $e->getMessage());
+                            $errorMessage = "Error sending Telegram alert to chat " . app_mask_value($chatId)
+                                . " for monitor '{$monitor['name']}'.";
+                            if (app_debug_enabled()) {
+                                $errorMessage .= ' ' . $e->getMessage();
+                            }
+                            error_log($errorMessage);
                             $allSent = false;
                         }
                     }
@@ -482,7 +504,7 @@ class UptimeMonitor
         if ($defaultChatId && !in_array($defaultChatId, explode(',', $monitor['telegram_chat_ids'] ?? ''))) {
             $telegram = new TelegramNotifier();
             if ($telegram->sendMessage($message)) {
-                error_log("Telegram alert sent to default chat ID for monitor '{$monitor['name']}'. Alert type: $alertType");
+                app_log_debug("Telegram alert sent to the default chat for monitor '{$monitor['name']}'. Alert type: $alertType");
             } else {
                 error_log("Failed to send Telegram alert to default chat ID for monitor '{$monitor['name']}'.");
                 $allSent = false;
