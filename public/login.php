@@ -9,8 +9,7 @@ if (!defined('DEBUG_MODE') || DEBUG_MODE !== true) {
 
 if (!defined('CONFIG_INCLUDED')) {
     if (!file_exists(__DIR__ . '/../config/database.php')) {
-        header('Location: ' . (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://')
-            . $_SERVER['HTTP_HOST'] . '/install.php');
+        header('Location: /install.php');
         exit;
     }
 
@@ -26,7 +25,7 @@ $user = new User();
 
 // Redirect if already logged in
 if ($user->isLoggedIn() && $user->isAdmin()) {
-    header('Location: ' . BASE_URL . '/public/index.php');
+    header('Location: /public/index.php');
     exit;
 }
 
@@ -47,6 +46,11 @@ if (!isset($_SESSION['captcha_question']) || !isset($_SESSION['captcha_answer'])
 }
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    if (!csrf_validate($_POST['csrf_token'] ?? null)) {
+        http_response_code(400);
+        exit('Invalid request token.');
+    }
+
     $username = $_POST['username'];
     $password = $_POST['password'];
     $captcha_answer = isset($_POST['captcha_answer']) ? intval($_POST['captcha_answer']) : 0;
@@ -63,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $_SESSION['captcha_question'] = generateMathCaptcha();
     } elseif ($user->login($username, $password) && $user->isAdmin()) {
         $user->resetLoginAttempts();
-        header('Location: ' . BASE_URL . '/public/index.php');
+        header('Location: /public/index.php');
         exit;
     } else {
         $user->trackFailedLogin();
@@ -90,6 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <p class="sorgs-message error"><?php echo htmlspecialchars($error); ?></p>
         <?php endif; ?>
         <form method="post" action="">
+            <?php echo csrf_field(); ?>
             <div class="sorgs-form-group">
                 <label for="username">Username:</label>
                 <input type="text" id="username" name="username" required>

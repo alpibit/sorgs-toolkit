@@ -22,6 +22,15 @@ if (!$user->isLoggedIn() || !$user->isAdmin()) {
     exit;
 }
 
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_validate($_POST['csrf_token'] ?? null)) {
+    http_response_code(400);
+    echo json_encode([
+        'success' => false,
+        'error' => 'Invalid request token'
+    ]);
+    exit;
+}
+
 try {
     // Get bot token from settings
     $db = new Database();

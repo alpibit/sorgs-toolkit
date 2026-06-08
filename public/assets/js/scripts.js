@@ -1,5 +1,12 @@
-function testTelegramConnection() {
-    fetch('test_telegram.php')
+function testTelegramConnection(button) {
+    const csrfToken = button && button.dataset ? button.dataset.csrf : '';
+    const formData = new FormData();
+    formData.append('csrf_token', csrfToken);
+
+    fetch('test_telegram.php', {
+        method: 'POST',
+        body: formData
+    })
         .then(response => response.json())
         .then(data => {
             if (data.success) {

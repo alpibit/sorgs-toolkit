@@ -6,6 +6,10 @@ if (!defined('CONFIG_INCLUDED')) {
     define('CONFIG_INCLUDED', true);
 }
 
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
+
 $errors = [];
 $success = false;
 
@@ -16,22 +20,18 @@ if (file_exists(__DIR__ . '/config/database.php')) {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Already Installed</title>
-        <link rel="stylesheet" href="' . (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://')
-        . $_SERVER['HTTP_HOST'] . '/public/assets/css/styles.css">
-        <meta http-equiv="refresh" content="15;url=' . (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://')
-        . $_SERVER['HTTP_HOST'] . '/public/login.php">
+        <link rel="stylesheet" href="/public/assets/css/styles.css">
+        <meta http-equiv="refresh" content="15;url=/public/login.php">
     </head>
     <body>
         <div class="sorgs-container">
             <h1>Sorgs System</h1>
             <div class="sorgs-message error">
-                <p>The system is already installed.</p>
-                <p><strong>Reinstallation Instructions:</strong> Delete the file <code>' . __DIR__ . '/config/database.php</code>. 
-                If you want a clean reinstall, drop all tables from your existing database or create a new database.</p>
+                <p>The system is already installed, so the installer is locked. It stays disabled for as long as <code>config/database.php</code> exists.</p>
+                <p><strong>Need to reinstall?</strong> Delete <code>config/database.php</code> from the application directory; for a clean reinstall, also drop all tables from your existing database or use a fresh one.</p>
             </div>
             <p>If you just want to use the existing installation, you can proceed to login:</p>
-            <a class="sorgs-button sorgs-button-primary" href="' . (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://')
-        . $_SERVER['HTTP_HOST'] . '/public/login.php">Go to Login</a>
+            <a class="sorgs-button sorgs-button-primary" href="/public/login.php">Go to Login</a>
         </div>
     </body>
     </html>';
@@ -40,6 +40,11 @@ if (file_exists(__DIR__ . '/config/database.php')) {
 
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    if (!csrf_validate($_POST['csrf_token'] ?? null)) {
+        http_response_code(400);
+        exit('Invalid request token.');
+    }
+
     $host = trim($_POST['db_host']);
     $name = trim($_POST['db_name']);
     $user = trim($_POST['db_user']);
@@ -112,6 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <?php endif; ?>
 
             <form method="post" action="<?php echo htmlspecialchars($_SERVER['PHP_SELF'], ENT_QUOTES, 'UTF-8'); ?>">
+                <?php echo csrf_field(); ?>
                 <div class="sorgs-settings-section">
                     <h2>Database Configuration</h2>
                     <label for="db_host">Database Host</label>

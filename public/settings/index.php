@@ -1,8 +1,7 @@
 <?php
 if (!defined('CONFIG_INCLUDED')) {
     if (!file_exists(__DIR__ . '/../../config/database.php')) {
-        header('Location: ' . (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://')
-            . $_SERVER['HTTP_HOST'] . '/install.php');
+        header('Location: /install.php');
         exit;
     }
 
@@ -18,13 +17,18 @@ $user = new User();
 $db = new Database();
 
 if (!$user->isLoggedIn() || !$user->isAdmin()) {
-    header('Location: ' . BASE_URL . '/public/login.php');
+    header('Location: /public/login.php');
     exit;
 }
 
 $message = '';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    if (!csrf_validate($_POST['csrf_token'] ?? null)) {
+        http_response_code(400);
+        exit('Invalid request token.');
+    }
+
     app_log_debug('Processing settings update request.');
 
     $conn = $db->connect();
@@ -100,6 +104,7 @@ $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
         <?php endif; ?>
 
         <form method="post" class="sorgs-form">
+            <?php echo csrf_field(); ?>
             <div class="sorgs-settings-section">
                 <h2>General Settings</h2>
                 <div class="sorgs-form-group">
@@ -136,7 +141,7 @@ $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
                     <small class="sorgs-form-help">This will receive all notifications if no specific chat IDs are set</small>
                 </div>
                 <div class="sorgs-form-group">
-                    <button type="button" onclick="testTelegramConnection()" class="sorgs-button sorgs-button-secondary">
+                    <button type="button" id="test-telegram-btn" data-csrf="<?php echo htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" onclick="testTelegramConnection(this)" class="sorgs-button sorgs-button-secondary">
                         Test Telegram Connection
                     </button>
                 </div>

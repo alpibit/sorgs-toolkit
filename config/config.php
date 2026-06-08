@@ -83,6 +83,34 @@ if (!function_exists('app_mask_email')) {
     }
 }
 
+if (!function_exists('csrf_token')) {
+    function csrf_token(): string
+    {
+        if (empty($_SESSION['csrf_token'])) {
+            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+        }
+
+        return $_SESSION['csrf_token'];
+    }
+}
+
+if (!function_exists('csrf_field')) {
+    function csrf_field(): string
+    {
+        return '<input type="hidden" name="csrf_token" value="'
+            . htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8') . '">';
+    }
+}
+
+if (!function_exists('csrf_validate')) {
+    function csrf_validate($token): bool
+    {
+        return is_string($token)
+            && !empty($_SESSION['csrf_token'])
+            && hash_equals($_SESSION['csrf_token'], $token);
+    }
+}
+
 if (!defined('CLI_MODE')) {
     define('CLI_MODE', PHP_SAPI === 'cli');
 }
@@ -99,4 +127,3 @@ if (!defined('BASE_URL')) {
 define('APP_NAME', 'Sorgs');
 define('APP_VERSION', '0.1');
 define('DEBUG_MODE', app_env_bool('APP_DEBUG', false));
-define('ADMIN_EMAIL', ' [email protected]');

@@ -9,14 +9,13 @@ if (!defined('DEBUG_MODE') || DEBUG_MODE !== true) {
 
 header("X-Content-Type-Options: nosniff");
 header("X-Frame-Options: DENY");
-header("X-XSS-Protection: 1; mode=block");
+header("X-XSS-Protection: 0");
 header("Referrer-Policy: strict-origin-when-cross-origin");
 header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-src 'self';");
 
 if (!defined('CONFIG_INCLUDED')) {
     if (!file_exists(__DIR__ . '/../config/database.php')) {
-        header('Location: ' . (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://')
-            . $_SERVER['HTTP_HOST'] . '/install.php');
+        header('Location: /install.php');
         exit;
     }
 
@@ -32,8 +31,13 @@ $user = new User();
 $monitor = new UptimeMonitor();
 
 if (!$user->isLoggedIn() || !$user->isAdmin()) {
-    header('Location: ' . BASE_URL . '/public/login.php');
+    header('Location: /public/login.php');
     exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !csrf_validate($_POST['csrf_token'] ?? null)) {
+    http_response_code(400);
+    exit('Invalid request token.');
 }
 
 $action = isset($_GET['action']) ? $_GET['action'] : '';
@@ -85,8 +89,8 @@ switch ($action) {
         break;
 
     case 'delete':
-        if (isset($_GET['id'])) {
-            $result = $monitor->deleteMonitor($_GET['id']);
+        if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['id'])) {
+            $result = $monitor->deleteMonitor($_POST['id']);
             if ($result) {
                 $message = "Monitor deleted successfully.";
             } else {
@@ -98,8 +102,8 @@ switch ($action) {
         break;
 
     case 'check':
-        if (isset($_GET['id'])) {
-            $monitorData = $monitor->getMonitor($_GET['id']);
+        if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['id'])) {
+            $monitorData = $monitor->getMonitor($_POST['id']);
             if ($monitorData) {
                 $result = $monitor->checkSite($monitorData);
                 $message = "Monitor status: " . ucfirst($result['status']) . ". " . $result['message'];
@@ -115,8 +119,8 @@ switch ($action) {
         break;
 
     case 'test':
-        if (isset($_GET['id'])) {
-            $monitorData = $monitor->getMonitor($_GET['id']);
+        if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['id'])) {
+            $monitorData = $monitor->getMonitor($_POST['id']);
             if ($monitorData) {
                 $testResult = [
                     'status' => 'down',
@@ -219,7 +223,12 @@ if (isset($_GET['message'])) {
                 <li><a href="<?php echo BASE_URL; ?>/public/index.php">Monitors</a></li>
                 <li><a href="<?php echo BASE_URL; ?>/public/index.php?action=add">Add Monitor</a></li>
                 <li><a href="<?php echo BASE_URL; ?>/public/settings/index.php">Settings</a></li>
-                <li><a href="<?php echo BASE_URL; ?>/public/logout.php">Logout</a></li>
+                <li>
+                    <form method="post" action="<?php echo BASE_URL; ?>/public/logout.php" class="sorgs-inline-form">
+                        <?php echo csrf_field(); ?>
+                        <button type="submit" class="sorgs-link-button">Logout</button>
+                    </form>
+                </li>
             </ul>
         </nav>
 
@@ -298,8 +307,9 @@ if (isset($_GET['message'])) {
         <?php if ($action == 'add' || $action == 'edit'): ?>
             <h2><?php echo $action == 'add' ? 'Add' : 'Edit'; ?> Monitor</h2>
             <form method="post" action="" class="sorgs-form">
+                <?php echo csrf_field(); ?>
                 <?php if ($action == 'edit'): ?>
-                    <input type="hidden" name="id" value="<?php echo $monitorData['id']; ?>">
+                    <input type="hidden" name="id" value="<?php echo (int)$monitorData['id']; ?>">
                 <?php endif; ?>
                 <div class="sorgs-form-group">
                     <label for="name">Name:</label>
@@ -456,10 +466,22 @@ if (isset($_GET['message'])) {
                                 <?php endif; ?>
                             </td>
                             <td class="sorgs-actions">
-                                <a href="index.php?action=edit&id=<?php echo $m['id']; ?>" class="sorgs-button sorgs-button-small sorgs-button-secondary">Edit</a>
-                                <a href="index.php?action=delete&id=<?php echo $m['id']; ?>" onclick="return confirm('Are you sure you want to delete this monitor?')" class="sorgs-button sorgs-button-small sorgs-button-danger">Delete</a>
-                                <a href="index.php?action=check&id=<?php echo $m['id']; ?>" class="sorgs-button sorgs-button-small sorgs-button-primary">Check</a>
-                                <a href="index.php?action=test&id=<?php echo $m['id']; ?>" class="sorgs-button sorgs-button-small">Test</a>
+                                <a href="index.php?action=edit&id=<?php echo (int)$m['id']; ?>" class="sorgs-button sorgs-button-small sorgs-button-secondary">Edit</a>
+                                <form method="post" action="index.php?action=delete" class="sorgs-inline-form" onsubmit="return confirm('Are you sure you want to delete this monitor?')">
+                                    <?php echo csrf_field(); ?>
+                                    <input type="hidden" name="id" value="<?php echo (int)$m['id']; ?>">
+                                    <button type="submit" class="sorgs-button sorgs-button-small sorgs-button-danger">Delete</button>
+                                </form>
+                                <form method="post" action="index.php?action=check" class="sorgs-inline-form">
+                                    <?php echo csrf_field(); ?>
+                                    <input type="hidden" name="id" value="<?php echo (int)$m['id']; ?>">
+                                    <button type="submit" class="sorgs-button sorgs-button-small sorgs-button-primary">Check</button>
+                                </form>
+                                <form method="post" action="index.php?action=test" class="sorgs-inline-form">
+                                    <?php echo csrf_field(); ?>
+                                    <input type="hidden" name="id" value="<?php echo (int)$m['id']; ?>">
+                                    <button type="submit" class="sorgs-button sorgs-button-small">Test</button>
+                                </form>
                             </td>
                         </tr>
                     <?php endforeach; ?>
