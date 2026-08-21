@@ -1,6 +1,8 @@
 <?php
 class SmtpClient
 {
+    private const MAX_RAW_BYTES_PER_ENCODED_WORD = 45;
+
     private $host;
     private $port;
     private $username;
@@ -157,16 +159,69 @@ class SmtpClient
         $this->send("DATA");
         $this->expect(354);
 
-        $message = "From: $from\r\n";
+        $message = "Date: " . date('r') . "\r\n";
+        $message .= "Message-ID: " . $this->generateMessageId($from) . "\r\n";
+        $message .= "From: $from\r\n";
         $message .= "To: $to\r\n";
-        $message .= "Subject: $subject\r\n";
+        $message .= "Subject: " . $this->encodeHeaderValue($subject) . "\r\n";
+        $message .= "MIME-Version: 1.0\r\n";
         $message .= "Content-Type: text/plain; charset=UTF-8\r\n";
+        $message .= "Content-Transfer-Encoding: 8bit\r\n";
         $message .= "\r\n";
         $message .= $body;
         $message .= "\r\n.";
 
         $this->send($message);
         $this->expect(250);
+    }
+
+    private function generateMessageId($from)
+    {
+        $domain = '';
+        $atPosition = strrpos((string) $from, '@');
+        if ($atPosition !== false) {
+            $domain = substr((string) $from, $atPosition + 1);
+        }
+
+        if ($domain === '' || $domain === false) {
+            $domain = gethostname() ?: 'localhost';
+        }
+
+        return '<' . bin2hex(random_bytes(16)) . '@' . $domain . '>';
+    }
+
+    private function encodeHeaderValue($value)
+    {
+        $value = str_replace(["\r", "\n"], '', (string) $value);
+
+        if (preg_match('/^[\x20-\x7E]*$/', $value)) {
+            return $value;
+        }
+
+        $characters = preg_split('//u', $value, -1, PREG_SPLIT_NO_EMPTY);
+        if ($characters === false || $characters === []) {
+            return '=?UTF-8?B?' . base64_encode($value) . '?=';
+        }
+
+        $chunks = [];
+        $current = '';
+        foreach ($characters as $character) {
+            if ($current !== '' && strlen($current) + strlen($character) > self::MAX_RAW_BYTES_PER_ENCODED_WORD) {
+                $chunks[] = $current;
+                $current = '';
+            }
+            $current .= $character;
+        }
+        if ($current !== '') {
+            $chunks[] = $current;
+        }
+
+        $encoded = [];
+        foreach ($chunks as $chunk) {
+            $encoded[] = '=?UTF-8?B?' . base64_encode($chunk) . '?=';
+        }
+
+        return implode("\r\n ", $encoded);
     }
 
     public function quit()

@@ -16,6 +16,18 @@ class Email
             return true; // Return true to avoid flooding logs during initial setup
         }
 
+        $from = trim((string) ($settings['mail_from'] ?? ''));
+        if (!filter_var($from, FILTER_VALIDATE_EMAIL)) {
+            $from = trim((string) ($settings['smtp_user'] ?? ''));
+        }
+        if (!filter_var($from, FILTER_VALIDATE_EMAIL)) {
+            error_log(
+                "No valid sender address configured. Set 'From Address' under Settings > SMTP. "
+                . "Unable to send alert email for monitor: {$monitor['name']}."
+            );
+            return false;
+        }
+
         $smtp = new SmtpClient(
             $settings['smtp_host'],
             $settings['smtp_port'],
@@ -29,8 +41,6 @@ class Email
 
         try {
             $smtp->connect();
-
-            $from = 'noreply@' . app_current_host();
 
             if ($subject === null) {
                 $subject = "Alert: {$monitor['name']} is {$result['status']}!";
@@ -69,7 +79,8 @@ class Email
 
             $body .= "HTTP Status Code: {$result['http_code']}\r\n";
 
-            if (!empty($result['error'])) {
+            if (!empty($result['error'])
+                && strpos((string) ($result['message'] ?? ''), (string) $result['error']) === false) {
                 $body .= "Error: {$result['error']}\r\n";
             }
 
@@ -115,7 +126,7 @@ class Email
         $conn = $db->connect();
 
         $settings = [];
-        $sql = "SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass')";
+        $sql = "SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'mail_from')";
         $result = $conn->query($sql);
 
         while ($row = $result->fetch(PDO::FETCH_ASSOC)) {

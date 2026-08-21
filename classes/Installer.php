@@ -39,6 +39,7 @@ class Installer
             $this->setDefaultSettings();
             $this->createAdminUser($adminUser, $adminPass, $adminEmail);
             $this->setSmtpSettings($smtpHost, $smtpPort, $smtpUser, $smtpPass);
+            $this->setMailFrom($smtpUser, $adminEmail);
             $this->flagAsInstalled();
 
             return true;
@@ -133,6 +134,7 @@ class Installer
             ['admin_email', ''],
             ['installed', 'false'],
             ['alert_cooldown', '3600'],
+            ['mail_from', ''],
             ['telegram_bot_token', ''],
             ['telegram_default_chat_id', '']
         ];
@@ -167,6 +169,19 @@ class Installer
         foreach ($smtpSettings as $setting) {
             $this->insertOrUpdateSetting($setting[0], $setting[1]);
         }
+    }
+
+    private function setMailFrom($smtpUser, $adminEmail)
+    {
+        $from = '';
+
+        if (filter_var($smtpUser, FILTER_VALIDATE_EMAIL)) {
+            $from = $smtpUser;
+        } elseif (filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
+            $from = $adminEmail;
+        }
+
+        $this->insertOrUpdateSetting('mail_from', $from);
     }
 
     private function insertOrUpdateSetting($key, $value)

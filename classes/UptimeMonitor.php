@@ -276,6 +276,7 @@ class UptimeMonitor
 
         if ($lastAlertTime === null || ($currentTime - $lastAlertTime) >= $this->alertCooldownPeriod) {
             $result['message'] .= " (Still down after {$monitor['consecutive_failures']} checks)";
+            $result['consecutive_failures'] = $monitor['consecutive_failures'];
             $this->sendAlert($monitor, $result, 'still_down');
             $this->updateLastAlertTime($monitor['id'], $currentTime);
         }
@@ -415,7 +416,7 @@ class UptimeMonitor
                     try {
                         $emailResult = [
                             'status' => $result['status'],
-                            'message' => $message,
+                            'message' => $result['message'],
                             'http_code' => $result['http_code'] ?? null,
                             'response_time' => $result['response_time'] ?? null,
                             'download_size' => $result['download_size'] ?? null,

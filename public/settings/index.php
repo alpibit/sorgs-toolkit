@@ -42,6 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         'smtp_host',
         'smtp_port',
         'smtp_user',
+        'mail_from',
         'telegram_bot_token',
         'telegram_default_chat_id'
     ];
@@ -175,6 +176,12 @@ $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
                 <div class="sorgs-form-group">
                     <label for="smtp_pass">SMTP Password:</label>
                     <input type="password" id="smtp_pass" name="smtp_pass" placeholder="Enter new password to change">
+                </div>
+
+                <div class="sorgs-form-group">
+                    <label for="mail_from">From Address:</label>
+                    <input type="email" id="mail_from" name="mail_from" value="<?php echo htmlspecialchars($settings['mail_from'] ?? ''); ?>">
+                    <small class="sorgs-form-help">Address alerts are sent from. Most providers require this to match the SMTP username, otherwise the mail is rejected.</small>
                 </div>
             </div>
 

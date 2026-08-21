@@ -22,6 +22,7 @@ VALUES
     ('smtp_port', ''),
     ('smtp_user', ''),
     ('smtp_pass', ''),
+    ('mail_from', ''),
     ('telegram_bot_token', ''),
     ('telegram_default_chat_id', ''),
     ('alert_cooldown', '3600') ON DUPLICATE KEY
