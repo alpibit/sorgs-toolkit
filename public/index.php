@@ -404,7 +404,7 @@ if (isset($_GET['message'])) {
                                 </span>
                             </td>
                             <td>
-                                <?php if ($m['downtime_start'] && ($m['last_status'] === 'down' || $m['last_status'] === 'warning')):
+                                <?php if ($m['downtime_start'] && $m['last_status'] === 'down'):
                                     $start = new DateTime($m['downtime_start']);
                                     $now = new DateTime();
                                     $interval = $start->diff($now);

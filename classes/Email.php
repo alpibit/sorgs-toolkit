@@ -61,6 +61,12 @@ class Email
                     $body .= "Total Duration: {$result['downtime_duration']}\r\n";
                     $body .= "Failed Checks: {$result['consecutive_failures']}\r\n";
                 }
+            } elseif ($alertType === 'ssl_expiring') {
+                $body = "SSL CERTIFICATE NOTICE\r\n";
+                $body .= "======================\r\n\r\n";
+                $body .= "Monitor: {$monitor['name']}\r\n";
+                $body .= "URL: {$monitor['url']}\r\n";
+                $body .= "Site Status: {$result['status']}\r\n";
             } elseif ($alertType === 'still_down') {
                 $body = "ONGOING ISSUE NOTIFICATION\r\n";
                 $body .= "========================\r\n\r\n";

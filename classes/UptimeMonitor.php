@@ -1,8 +1,15 @@
 <?php
 class UptimeMonitor
 {
+    private const ALERT_TIME_COLUMNS = [
+        'downtime' => 'last_alert_time',
+        'ssl' => 'last_ssl_alert_time'
+    ];
+
     private $db;
     private $alertCooldownPeriod = 3600; // 1 hour
+    private $sslAlertCooldownPeriod = 86400; // 1 day
+    private $sslExpiryWarningDays = 30;
 
     public function __construct($db = null)
     {
@@ -90,23 +97,34 @@ class UptimeMonitor
             error_log("Checked {$monitor['name']}: {$currentStatus} (was: {$previousStatus}) - {$result['message']}");
 
             if ($previousStatus !== $currentStatus && $previousStatus !== null) {
-                if ($currentStatus === 'down' || $currentStatus === 'warning') {
+                if ($currentStatus === 'down') {
                     $this->handleDowntime($monitor, $result);
-                } elseif ($currentStatus === 'up' && ($previousStatus === 'down' || $previousStatus === 'warning')) {
+                } elseif ($currentStatus === 'up') {
                     $this->handleRecovery($monitor, $result);
                 }
-            } elseif ($currentStatus === 'down' || $currentStatus === 'warning') {
+            } elseif ($currentStatus === 'down') {
                 if ($previousStatus === null) {
                     $this->handleDowntime($monitor, $result);
                 } else {
                     $this->handleContinuedDowntime($monitor, $result);
                 }
             }
+
+            $this->handleCertificateExpiry($monitor, $result);
         }
     }
 
     public function checkSite($monitor, $retryAttempts = 3, $timeout = 15)
     {
+        $sslInfo = null;
+        $sslDaysRemaining = null;
+        if (strpos($monitor['url'], 'https://') === 0) {
+            $sslInfo = $this->checkSslCertificate($monitor['url']);
+            if ($sslInfo && !empty($sslInfo['valid_to_time'])) {
+                $sslDaysRemaining = (int) ceil(($sslInfo['valid_to_time'] - time()) / 86400);
+            }
+        }
+
         $attempts = 0;
         while ($attempts < $retryAttempts) {
             $attempts++;
@@ -144,23 +162,10 @@ class UptimeMonitor
                 'response_time' => round($info['total_time'] * 1000, 2),
                 'download_size' => $info['size_download'],
                 'error' => $error,
-                'attempt' => $attempts
+                'attempt' => $attempts,
+                'ssl_info' => $sslInfo,
+                'ssl_days_remaining' => $sslDaysRemaining
             ];
-
-            // Check SSL certificate if it's an HTTPS URL
-            if (strpos($monitor['url'], 'https://') === 0) {
-                $sslInfo = $this->checkSslCertificate($monitor['url']);
-                $result['ssl_info'] = $sslInfo;
-
-                // Add warning if certificate is expiring soon (within 30 days)
-                if ($sslInfo && isset($sslInfo['valid_to_time']) && $sslInfo['valid_to_time'] < strtotime('+30 days')) {
-                    $daysRemaining = ceil(($sslInfo['valid_to_time'] - time()) / (60 * 60 * 24));
-                    $result['message'] .= " WARNING: SSL certificate expires in $daysRemaining days.";
-                    if ($daysRemaining <= 7) {
-                        $result['status'] = 'warning';
-                    }
-                }
-            }
 
             // Check if the request was successful
             $isSuccess = true;
@@ -224,7 +229,7 @@ class UptimeMonitor
         $downtimeStart = $current['downtime_start'];
         $consecutiveFailures = $current['consecutive_failures'];
 
-        if ($result['status'] === 'down' || $result['status'] === 'warning') {
+        if ($result['status'] === 'down') {
             if ($current['last_status'] === 'up' || $current['last_status'] === null) {
                 $downtimeStart = date('Y-m-d H:i:s');
                 $consecutiveFailures = 1;
@@ -266,20 +271,39 @@ class UptimeMonitor
     private function handleDowntime($monitor, $result)
     {
         $this->sendAlert($monitor, $result, 'down');
-        $this->updateLastAlertTime($monitor['id'], time());
+        $this->setAlertTime($monitor['id'], 'downtime', time());
     }
 
     private function handleContinuedDowntime($monitor, $result)
     {
-        $lastAlertTime = $this->getLastAlertTime($monitor['id']);
+        $lastAlertTime = $this->getAlertTime($monitor['id'], 'downtime');
         $currentTime = time();
 
         if ($lastAlertTime === null || ($currentTime - $lastAlertTime) >= $this->alertCooldownPeriod) {
             $result['message'] .= " (Still down after {$monitor['consecutive_failures']} checks)";
             $result['consecutive_failures'] = $monitor['consecutive_failures'];
             $this->sendAlert($monitor, $result, 'still_down');
-            $this->updateLastAlertTime($monitor['id'], $currentTime);
+            $this->setAlertTime($monitor['id'], 'downtime', $currentTime);
         }
+    }
+
+    private function handleCertificateExpiry($monitor, $result)
+    {
+        $daysRemaining = $result['ssl_days_remaining'] ?? null;
+
+        if ($daysRemaining === null || $daysRemaining > $this->sslExpiryWarningDays) {
+            return;
+        }
+
+        $lastAlertTime = $this->getAlertTime($monitor['id'], 'ssl');
+        $currentTime = time();
+
+        if ($lastAlertTime !== null && ($currentTime - $lastAlertTime) < $this->sslAlertCooldownPeriod) {
+            return;
+        }
+
+        $this->sendAlert($monitor, $result, 'ssl_expiring');
+        $this->setAlertTime($monitor['id'], 'ssl', $currentTime);
     }
 
     private function handleRecovery($monitor, $result)
@@ -289,7 +313,7 @@ class UptimeMonitor
         $result['consecutive_failures'] = $monitor['consecutive_failures'];
 
         $this->sendAlert($monitor, $result, 'recovery');
-        $this->updateLastAlertTime($monitor['id'], null);
+        $this->setAlertTime($monitor['id'], 'downtime', null);
     }
 
     private function calculateDowntimeDuration($monitor)
@@ -313,26 +337,27 @@ class UptimeMonitor
         return implode(', ', $parts);
     }
 
-    private function getLastAlertTime($monitorId)
+    private function getAlertTime($monitorId, $type)
     {
-        $sql = "SELECT last_alert_time FROM monitors WHERE id = :id";
-        $stmt = $this->db->prepare($sql);
+        $column = self::ALERT_TIME_COLUMNS[$type];
+        $stmt = $this->db->prepare("SELECT $column FROM monitors WHERE id = :id");
         $stmt->execute([':id' => $monitorId]);
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $result['last_alert_time'] ? strtotime($result['last_alert_time']) : null;
+        $value = $stmt->fetchColumn();
+        return $value ? strtotime($value) : null;
     }
 
-    private function updateLastAlertTime($monitorId, $time)
+    private function setAlertTime($monitorId, $type, $time)
     {
+        $column = self::ALERT_TIME_COLUMNS[$type];
+
         if ($time === null) {
-            $sql = "UPDATE monitors SET last_alert_time = NULL WHERE id = :id";
-            $stmt = $this->db->prepare($sql);
+            $stmt = $this->db->prepare("UPDATE monitors SET $column = NULL WHERE id = :id");
             $stmt->execute([':id' => $monitorId]);
-        } else {
-            $sql = "UPDATE monitors SET last_alert_time = FROM_UNIXTIME(:time) WHERE id = :id";
-            $stmt = $this->db->prepare($sql);
-            $stmt->execute([':id' => $monitorId, ':time' => $time]);
+            return;
         }
+
+        $stmt = $this->db->prepare("UPDATE monitors SET $column = FROM_UNIXTIME(:time) WHERE id = :id");
+        $stmt->execute([':id' => $monitorId, ':time' => $time]);
     }
 
     public function sendAlert($monitor, $result, $alertType = 'down')
@@ -351,6 +376,14 @@ class UptimeMonitor
             $subject = "🔴 STILL DOWN: {$monitor['name']} remains offline";
             $message = "$emoji Monitor Still Down: {$monitor['name']}\n\n";
             $message .= "Status: $status (Ongoing Issue)\n";
+        } elseif ($alertType === 'ssl_expiring') {
+            $days = (int) ($result['ssl_days_remaining'] ?? 0);
+            $emoji = $days <= 7 ? '🔴' : '⚠️';
+            $subject = $days <= 0
+                ? "$emoji SSL certificate for {$monitor['name']} has expired"
+                : "$emoji SSL certificate for {$monitor['name']} expires in $days days";
+            $message = "$emoji SSL Certificate Notice: {$monitor['name']}\n\n";
+            $message .= "Site Status: $status\n";
         } else {
             $emoji = ($result['status'] === 'down') ? '🔴' : '⚠️';
             $subject = "$emoji Alert: {$monitor['name']} is {$result['status']}!";
@@ -630,7 +663,8 @@ class UptimeMonitor
                 'ssl_issuer' => "ALTER TABLE monitors ADD COLUMN ssl_issuer VARCHAR(255) NULL",
                 'previous_status' => "ALTER TABLE monitors ADD COLUMN previous_status ENUM('up', 'down', 'warning') NULL",
                 'downtime_start' => "ALTER TABLE monitors ADD COLUMN downtime_start TIMESTAMP NULL DEFAULT NULL",
-                'consecutive_failures' => "ALTER TABLE monitors ADD COLUMN consecutive_failures INT(11) DEFAULT 0"
+                'consecutive_failures' => "ALTER TABLE monitors ADD COLUMN consecutive_failures INT(11) DEFAULT 0",
+                'last_ssl_alert_time' => "ALTER TABLE monitors ADD COLUMN last_ssl_alert_time TIMESTAMP NULL DEFAULT NULL"
             ];
 
             foreach ($columnsToAdd as $column => $alterQuery) {

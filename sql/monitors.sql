@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS `monitors` (
     `last_status_code` int(11) DEFAULT NULL,
     `last_error` text,
     `last_alert_time` timestamp NULL DEFAULT NULL,
+    `last_ssl_alert_time` timestamp NULL DEFAULT NULL,
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
