@@ -1,7 +1,22 @@
+document.addEventListener('submit', function (event) {
+    const form = event.target.closest('form[data-confirm]');
+
+    if (form && !window.confirm(form.dataset.confirm)) {
+        event.preventDefault();
+    }
+});
+
+document.addEventListener('click', function (event) {
+    const button = event.target.closest('#test-telegram-btn');
+
+    if (button) {
+        testTelegramConnection(button);
+    }
+});
+
 function testTelegramConnection(button) {
-    const csrfToken = button && button.dataset ? button.dataset.csrf : '';
     const formData = new FormData();
-    formData.append('csrf_token', csrfToken);
+    formData.append('csrf_token', button.dataset.csrf || '');
 
     fetch('test_telegram.php', {
         method: 'POST',

@@ -142,7 +142,7 @@ $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
                     <small class="sorgs-form-help">This will receive all notifications if no specific chat IDs are set</small>
                 </div>
                 <div class="sorgs-form-group">
-                    <button type="button" id="test-telegram-btn" data-csrf="<?php echo htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" onclick="testTelegramConnection(this)" class="sorgs-button sorgs-button-secondary">
+                    <button type="button" id="test-telegram-btn" data-csrf="<?php echo htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" class="sorgs-button sorgs-button-secondary">
                         Test Telegram Connection
                     </button>
                 </div>

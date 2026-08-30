@@ -176,9 +176,7 @@ if ($filter === 'down') {
 $stmt = $conn->query("SELECT 
     COUNT(*) as total,
     SUM(CASE WHEN last_status = 'up' THEN 1 ELSE 0 END) as up,
-    SUM(CASE WHEN last_status = 'down' THEN 1 ELSE 0 END) as down,
-    SUM(CASE WHEN last_status = 'warning' THEN 1 ELSE 0 END) as warning,
-    SUM(CASE WHEN last_status IS NULL THEN 1 ELSE 0 END) as unknown
+    SUM(CASE WHEN last_status = 'down' THEN 1 ELSE 0 END) as down
     FROM monitors");
 $stats = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -259,10 +257,6 @@ if (isset($_GET['message'])) {
                     <div class="sorgs-stat-card sorgs-stat-down">
                         <h3>Down</h3>
                         <div class="value"><?php echo number_format((float)($stats['down'] ?? 0)); ?></div>
-                    </div>
-                    <div class="sorgs-stat-card sorgs-stat-unknown">
-                        <h3>Warning</h3>
-                        <div class="value"><?php echo number_format((float)($stats['warning'] ?? 0)); ?></div>
                     </div>
                     <div class="sorgs-stat-card sorgs-stat-response">
                         <h3>Avg. Response Time</h3>
@@ -467,7 +461,7 @@ if (isset($_GET['message'])) {
                             </td>
                             <td class="sorgs-actions">
                                 <a href="index.php?action=edit&id=<?php echo (int)$m['id']; ?>" class="sorgs-button sorgs-button-small sorgs-button-secondary">Edit</a>
-                                <form method="post" action="index.php?action=delete" class="sorgs-inline-form" onsubmit="return confirm('Are you sure you want to delete this monitor?')">
+                                <form method="post" action="index.php?action=delete" class="sorgs-inline-form" data-confirm="Are you sure you want to delete this monitor?">
                                     <?php echo csrf_field(); ?>
                                     <input type="hidden" name="id" value="<?php echo (int)$m['id']; ?>">
                                     <button type="submit" class="sorgs-button sorgs-button-small sorgs-button-danger">Delete</button>
@@ -489,6 +483,8 @@ if (isset($_GET['message'])) {
             </table>
         <?php endif; ?>
     </div>
+
+    <script src="<?php echo BASE_URL; ?>/public/assets/js/scripts.js"></script>
 </body>
 
 </html>
