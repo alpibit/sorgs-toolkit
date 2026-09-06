@@ -1,4 +1,11 @@
 <?php
+if (PHP_SAPI !== 'cli') {
+    ob_start();
+    register_shutdown_function(function () {
+        ob_end_clean();
+    });
+}
+
 $lockFile = __DIR__ . '/cron.lock';
 $lockFilePointer = fopen($lockFile, 'w');
 

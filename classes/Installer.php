@@ -84,6 +84,8 @@ class Installer
         if (file_put_contents($configPath, $configContent) === false) {
             throw new Exception("Unable to write config file. Please make sure the config directory is writable.");
         }
+
+        chmod($configPath, 0600);
     }
 
     private function setupTables()
