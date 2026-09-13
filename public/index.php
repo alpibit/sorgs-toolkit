@@ -105,7 +105,7 @@ switch ($action) {
         if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['id'])) {
             $monitorData = $monitor->getMonitor($_POST['id']);
             if ($monitorData) {
-                $result = $monitor->checkSite($monitorData);
+                $result = $monitor->checkSite($monitorData, 1, 5);
                 $message = "Monitor status: " . ucfirst($result['status']) . ". " . $result['message'];
                 if (isset($result['http_code'])) {
                     $message .= " HTTP Status Code: " . $result['http_code'];

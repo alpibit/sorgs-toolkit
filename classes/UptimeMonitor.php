@@ -6,6 +6,8 @@ class UptimeMonitor
         'ssl' => 'last_ssl_alert_time'
     ];
 
+    private const SWEEP_BUDGET_SECONDS = 50;
+
     private $db;
     private $alertCooldownPeriod = 3600; // 1 hour
     private $sslAlertCooldownPeriod = 86400; // 1 day
@@ -85,11 +87,19 @@ class UptimeMonitor
 
     public function checkDueMonitors()
     {
-        $sql = "SELECT * FROM monitors WHERE last_check_time IS NULL OR last_check_time <= DATE_SUB(NOW(), INTERVAL check_interval SECOND)";
+        $sql = "SELECT * FROM monitors WHERE last_check_time IS NULL OR last_check_time <= DATE_SUB(NOW(), INTERVAL check_interval SECOND) ORDER BY last_check_time ASC";
         $stmt = $this->db->query($sql);
         $monitors = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+        $deadline = microtime(true) + self::SWEEP_BUDGET_SECONDS;
+        $checked = 0;
+
         foreach ($monitors as $monitor) {
+            if (microtime(true) >= $deadline) {
+                error_log("Sweep budget spent after $checked of " . count($monitors) . " monitors; the rest stay due for the next run.");
+                break;
+            }
+
             $result = $this->checkSite($monitor);
             $previousStatus = $monitor['last_status'];
             $currentStatus = $result['status'];
@@ -111,6 +121,7 @@ class UptimeMonitor
             }
 
             $this->handleCertificateExpiry($monitor, $result);
+            $checked++;
         }
     }
 
@@ -203,7 +214,7 @@ class UptimeMonitor
             error_log("Monitor check failed for {$monitor['name']} (Attempt $attempts/$retryAttempts): $failureReason. Retrying...");
 
             // Wait briefly before retry (exponential backoff)
-            $waitTime = pow(2, $attempts - 1) * 3000000; // Convert to microseconds
+            $waitTime = pow(2, $attempts - 1) * 1000000; // Convert to microseconds
             usleep($waitTime);
         }
 

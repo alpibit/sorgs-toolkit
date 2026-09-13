@@ -42,7 +42,7 @@ abstract class HealthCheck
             $result = $this->check();
             $result['duration'] = round((microtime(true) - $startTime) * 1000, 2); // in ms
             return $result;
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             return [
                 'success' => false,
                 'message' => 'Check failed with exception: ' . $e->getMessage(),

@@ -54,7 +54,7 @@ try {
     }
 
     echo "Health checks passed. Proceeding with monitoring...\n";
-} catch (Exception $e) {
+} catch (Throwable $e) {
     echo "Health check system error: " . $e->getMessage() . "\n";
     error_log("Cron job health check failed with exception: " . $e->getMessage());
     exit(1);
@@ -65,7 +65,7 @@ try {
     $monitor = new UptimeMonitor();
     $monitor->checkDueMonitors();
     echo "Monitoring completed successfully.\n";
-} catch (Exception $e) {
+} catch (Throwable $e) {
     echo "Monitoring error: " . $e->getMessage() . "\n";
     error_log("Cron job monitoring failed: " . $e->getMessage());
     exit(1);
@@ -75,4 +75,3 @@ echo "Cron job completed at " . date('Y-m-d H:i:s') . "\n";
 
 flock($lockFilePointer, LOCK_UN);
 fclose($lockFilePointer);
-unlink($lockFile);
