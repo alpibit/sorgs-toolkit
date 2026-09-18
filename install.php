@@ -6,9 +6,7 @@ if (!defined('CONFIG_INCLUDED')) {
     define('CONFIG_INCLUDED', true);
 }
 
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    session_start();
-}
+app_session_start();
 
 $errors = [];
 $success = false;

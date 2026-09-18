@@ -19,7 +19,7 @@ if (!defined('CONFIG_INCLUDED')) {
     define('CONFIG_INCLUDED', true);
 }
 
-session_start();
+app_session_start();
 
 $user = new User();
 

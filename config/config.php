@@ -111,6 +111,32 @@ if (!function_exists('csrf_validate')) {
     }
 }
 
+if (!function_exists('app_is_https')) {
+    function app_is_https(): bool
+    {
+        return isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on';
+    }
+}
+
+if (!function_exists('app_session_start')) {
+    function app_session_start(): void
+    {
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            return;
+        }
+
+        ini_set('session.use_strict_mode', '1');
+        session_set_cookie_params([
+            'lifetime' => 0,
+            'path' => '/',
+            'secure' => app_is_https(),
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ]);
+        session_start();
+    }
+}
+
 if (!defined('CLI_MODE')) {
     define('CLI_MODE', PHP_SAPI === 'cli');
 }
@@ -119,7 +145,7 @@ if (!defined('BASE_URL')) {
     if (CLI_MODE) {
         define('BASE_URL', '/');
     } else {
-        $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://';
+        $protocol = app_is_https() ? 'https://' : 'http://';
         define('BASE_URL', $protocol . app_current_host() . '/');
     }
 }

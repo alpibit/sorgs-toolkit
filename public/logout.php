@@ -6,7 +6,7 @@ if (!defined('CONFIG_INCLUDED')) {
     define('CONFIG_INCLUDED', true);
 }
 
-session_start();
+app_session_start();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !csrf_validate($_POST['csrf_token'] ?? null)) {
     header('Location: /public/index.php');

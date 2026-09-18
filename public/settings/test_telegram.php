@@ -11,7 +11,7 @@ header('Cache-Control: no-cache, must-revalidate');
 header('Content-Type: application/json');
 
 // Start session and check authentication
-session_start();
+app_session_start();
 
 $user = new User();
 if (!$user->isLoggedIn() || !$user->isAdmin()) {
