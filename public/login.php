@@ -19,6 +19,7 @@ if (!defined('CONFIG_INCLUDED')) {
     define('CONFIG_INCLUDED', true);
 }
 
+app_send_security_headers();
 app_session_start();
 
 $user = new User();

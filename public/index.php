@@ -7,12 +7,6 @@ if (!defined('DEBUG_MODE') || DEBUG_MODE !== true) {
     ini_set('log_errors', 1);
 }
 
-header("X-Content-Type-Options: nosniff");
-header("X-Frame-Options: DENY");
-header("X-XSS-Protection: 0");
-header("Referrer-Policy: strict-origin-when-cross-origin");
-header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-src 'self';");
-
 if (!defined('CONFIG_INCLUDED')) {
     if (!file_exists(__DIR__ . '/../config/database.php')) {
         header('Location: /install.php');
@@ -25,6 +19,7 @@ if (!defined('CONFIG_INCLUDED')) {
     define('CONFIG_INCLUDED', true);
 }
 
+app_send_security_headers();
 app_session_start();
 
 $user = new User();

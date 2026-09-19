@@ -11,6 +11,7 @@ header('Cache-Control: no-cache, must-revalidate');
 header('Content-Type: application/json');
 
 // Start session and check authentication
+app_send_security_headers();
 app_session_start();
 
 $user = new User();

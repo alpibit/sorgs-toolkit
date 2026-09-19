@@ -118,6 +118,23 @@ if (!function_exists('app_is_https')) {
     }
 }
 
+if (!function_exists('app_send_security_headers')) {
+    function app_send_security_headers(): void
+    {
+        if (headers_sent()) {
+            return;
+        }
+
+        header('X-Content-Type-Options: nosniff');
+        header('X-Frame-Options: DENY');
+        header('X-XSS-Protection: 0');
+        header('Referrer-Policy: strict-origin-when-cross-origin');
+        header("Content-Security-Policy: default-src 'self'; style-src 'self'; "
+            . "script-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
+            . "form-action 'self'; object-src 'none';");
+    }
+}
+
 if (!function_exists('app_session_start')) {
     function app_session_start(): void
     {
