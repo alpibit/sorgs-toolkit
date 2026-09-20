@@ -24,37 +24,43 @@ class Installer
                     2) The user '$user' doesn't have sufficient permissions to access this database";
                 }
 
-                throw new Exception($errorMessage);
+                throw new InstallerError($errorMessage);
             }
 
             $this->writeConfigFile($host, $name, $user, $pass);
 
-            require_once 'config/database.php';
+            require_once __DIR__ . '/../config/database.php';
 
             $db = new Database();
             $this->conn = $db->connect();
             $this->checkIfTablesExist();
 
             $this->setupTables();
-            $this->setDefaultSettings();
+            $this->setDefaultSettings($adminEmail);
             $this->createAdminUser($adminUser, $adminPass, $adminEmail);
             $this->setSmtpSettings($smtpHost, $smtpPort, $smtpUser, $smtpPass);
             $this->setMailFrom($smtpUser, $adminEmail);
             $this->flagAsInstalled();
 
             return true;
-        } catch (Exception $e) {
-            $errorMessage = 'Installation failed.';
-            if (function_exists('app_debug_enabled') && app_debug_enabled()) {
-                $errorMessage .= ' ' . $e->getMessage();
-            }
-            error_log($errorMessage);
+        } catch (Throwable $e) {
+            error_log('Installation failed: ' . $e->getMessage());
 
             $configPath = __DIR__ . '/../config/database.php';
             if (file_exists($configPath)) {
                 unlink($configPath);
             }
-            throw new Exception($e->getMessage());
+
+            if ($e instanceof InstallerError) {
+                throw $e;
+            }
+
+            $errorMessage = 'Installation failed. The reason is in the server error log.';
+            if (function_exists('app_debug_enabled') && app_debug_enabled()) {
+                $errorMessage .= ' ' . $e->getMessage();
+            }
+
+            throw new InstallerError($errorMessage);
         }
     }
 
@@ -67,7 +73,7 @@ class Installer
             } catch (PDOException $e) {
                 continue;
             }
-            throw new Exception("The database already contains a table named '$table'. It seems an installation already exists. Please use a different database, or clear the existing tables.");
+            throw new InstallerError("The database already contains a table named '$table'. It seems an installation already exists. Please use a different database, or clear the existing tables.");
         }
     }
 
@@ -82,7 +88,7 @@ class Installer
 
         $configPath = __DIR__ . '/../config/database.php';
         if (file_put_contents($configPath, $configContent) === false) {
-            throw new Exception("Unable to write config file. Please make sure the config directory is writable.");
+            throw new InstallerError("Unable to write config file. Please make sure the config directory is writable.");
         }
 
         chmod($configPath, 0600);
@@ -126,14 +132,14 @@ class Installer
         }
     }
 
-    private function setDefaultSettings()
+    private function setDefaultSettings($adminEmail)
     {
         $defaultSettings = [
             ['timezone', 'UTC'],
             ['date_format', 'Y-m-d'],
             ['time_format', 'H:i:s'],
             ['check_interval', '300'],
-            ['admin_email', ''],
+            ['admin_email', $adminEmail],
             ['installed', 'false'],
             ['alert_cooldown', '3600'],
             ['mail_from', ''],

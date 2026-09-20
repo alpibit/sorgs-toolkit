@@ -5,5 +5,5 @@ if (!file_exists(__DIR__ . '/config/database.php')) {
     exit;
 }
 
-require 'public/index.php';
+require __DIR__ . '/public/index.php';
 ?>
