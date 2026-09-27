@@ -16,6 +16,11 @@ CREATE TABLE IF NOT EXISTS `monitors` (
     `last_ssl_alert_time` timestamp NULL DEFAULT NULL,
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `ssl_expiry` datetime DEFAULT NULL,
+    `ssl_issuer` varchar(255) DEFAULT NULL,
+    `previous_status` enum('up', 'down') DEFAULT NULL,
+    `downtime_start` timestamp NULL DEFAULT NULL,
+    `consecutive_failures` int(11) DEFAULT 0,
     PRIMARY KEY (`id`),
     INDEX `idx_last_check_time` (`last_check_time`),
     INDEX `idx_last_status` (`last_status`)

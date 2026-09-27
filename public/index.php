@@ -379,10 +379,6 @@ if (isset($_GET['message'])) {
                                         $statusClass = 'sorgs-status-down';
                                         $statusIcon = '🔴';
                                         break;
-                                    case 'warning':
-                                        $statusClass = 'sorgs-status-warning';
-                                        $statusIcon = '⚠️';
-                                        break;
                                     default:
                                         $statusClass = 'sorgs-status-unknown';
                                         $statusIcon = '⚪';

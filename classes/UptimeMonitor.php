@@ -19,8 +19,6 @@ class UptimeMonitor
             $db = new Database();
         }
         $this->db = $db->connect();
-
-        $this->ensureSchema();
     }
 
     public function addMonitor($name, $url, $checkInterval, $expectedStatusCode = 200, $expectedKeyword = '', $notificationEmails = '', $telegramChatIds = '')
@@ -660,45 +658,5 @@ class UptimeMonitor
         }
 
         return true;
-    }
-
-    /**
-     * Ensures the database schema is up-to-date with required columns
-     * This method checks for SSL certificate columns and adds them if missing
-     */
-    public function ensureSchema()
-    {
-        try {
-            $columnsToAdd = [
-                'ssl_expiry' => "ALTER TABLE monitors ADD COLUMN ssl_expiry DATETIME NULL",
-                'ssl_issuer' => "ALTER TABLE monitors ADD COLUMN ssl_issuer VARCHAR(255) NULL",
-                'previous_status' => "ALTER TABLE monitors ADD COLUMN previous_status ENUM('up', 'down', 'warning') NULL",
-                'downtime_start' => "ALTER TABLE monitors ADD COLUMN downtime_start TIMESTAMP NULL DEFAULT NULL",
-                'consecutive_failures' => "ALTER TABLE monitors ADD COLUMN consecutive_failures INT(11) DEFAULT 0",
-                'last_ssl_alert_time' => "ALTER TABLE monitors ADD COLUMN last_ssl_alert_time TIMESTAMP NULL DEFAULT NULL"
-            ];
-
-            foreach ($columnsToAdd as $column => $alterQuery) {
-                $sql = "SHOW COLUMNS FROM monitors LIKE '$column'";
-                $stmt = $this->db->query($sql);
-
-                if ($stmt->rowCount() == 0) {
-                    error_log("Adding $column column to monitors table");
-                    $this->db->exec($alterQuery);
-                }
-            }
-
-            // Update last_status column to include 'warning' status if not already present
-            $sql = "SHOW COLUMNS FROM monitors WHERE Field = 'last_status'";
-            $stmt = $this->db->query($sql);
-            $column = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            if ($column && strpos($column['Type'], 'warning') === false) {
-                error_log("Updating last_status column to include 'warning' status");
-                $this->db->exec("ALTER TABLE monitors MODIFY COLUMN last_status ENUM('up', 'down', 'warning') NULL");
-            }
-        } catch (Exception $e) {
-            error_log("Error ensuring schema: " . $e->getMessage());
-        }
     }
 }
