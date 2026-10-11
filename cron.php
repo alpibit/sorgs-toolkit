@@ -7,15 +7,48 @@ if (PHP_SAPI !== 'cli') {
 }
 
 $lockFile = __DIR__ . '/cron.lock';
-$lockFilePointer = fopen($lockFile, 'w');
+$lockFilePointer = fopen($lockFile, 'c+');
 
 if (!$lockFilePointer) {
-    die('Cannot create lock file');
+    error_log('Cannot open cron lock file.');
+    exit(1);
 }
 
-if (!flock($lockFilePointer, LOCK_EX | LOCK_NB)) {
+if (!flock($lockFilePointer, LOCK_EX | LOCK_NB, $wouldBlock)) {
+    fclose($lockFilePointer);
+    if (!$wouldBlock) {
+        error_log('Cannot acquire cron lock.');
+        exit(1);
+    }
     echo "Cron job is already running. Exiting.\n";
-    exit;
+    exit(0);
+}
+
+$lastStartTime = stream_get_contents($lockFilePointer);
+if ($lastStartTime === false || ($lastStartTime !== '' && (
+    !preg_match('/\A[0-9]+\.[0-9]{6}\n\z/', $lastStartTime)
+    || !is_finite((float) $lastStartTime)
+))) {
+    error_log('Cannot read a valid cron start time.');
+    fclose($lockFilePointer);
+    exit(1);
+}
+
+$startTime = microtime(true);
+if ($lastStartTime !== '' && $startTime - (float) $lastStartTime < 30) {
+    echo "Cron job is within its 30-second cooldown. Exiting.\n";
+    fclose($lockFilePointer);
+    exit(0);
+}
+
+$startTimeRecord = sprintf("%.6F\n", $startTime);
+if (!rewind($lockFilePointer)
+    || fwrite($lockFilePointer, $startTimeRecord) !== strlen($startTimeRecord)
+    || !ftruncate($lockFilePointer, strlen($startTimeRecord))
+    || !fflush($lockFilePointer)) {
+    error_log('Cannot save cron start time.');
+    fclose($lockFilePointer);
+    exit(1);
 }
 
 if (!file_exists(__DIR__ . '/config/database.php')) {

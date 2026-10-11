@@ -47,6 +47,8 @@ http://yourdomain.com/install.php
 * * * * * php /path/to/sorgs/cron.php
 ```
 
+Alternatively, configure an external cron service to request `https://yourdomain.com/cron.php` once a minute. HTTP and command-line requests share a 30-second cooldown between run starts. A running job blocks overlapping runs, and requests skipped by either guard return successfully. Failed runs also consume the cooldown interval.
+
 ## Configuration
 
 ### Debug Logging
@@ -96,6 +98,10 @@ The dashboard provides:
 - SSL certificate status summary
 - Color-coded status indicators
 - Filtering options for different views (all/down/SSL expiring)
+
+## Tests
+
+Run the cron cooldown regression checks with `php tests/cron.php`. They use temporary fixtures and a local PHP server, without accessing the application database or sending notifications.
 
 ## Contributing
 
