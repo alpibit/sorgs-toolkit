@@ -44,24 +44,31 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         exit('Invalid request token.');
     }
 
+    foreach (['db_pass', 'admin_pass', 'smtp_pass'] as $passwordField) {
+        if (array_key_exists($passwordField, $_POST) && !is_string($_POST[$passwordField])) {
+            http_response_code(400);
+            exit('Invalid password input.');
+        }
+    }
+
     $host = trim($_POST['db_host']);
     $name = trim($_POST['db_name']);
     $user = trim($_POST['db_user']);
-    $pass = trim($_POST['db_pass']);
+    $pass = $_POST['db_pass'] ?? '';
     $adminUser = trim($_POST['admin_user']);
-    $adminPass = trim($_POST['admin_pass']);
+    $adminPass = $_POST['admin_pass'] ?? '';
     $adminEmail = trim($_POST['admin_email']);
     $smtpHost = trim($_POST['smtp_host']);
     $smtpPort = trim($_POST['smtp_port']);
     $smtpUser = trim($_POST['smtp_user']);
-    $smtpPass = trim($_POST['smtp_pass']);
+    $smtpPass = $_POST['smtp_pass'] ?? '';
 
     // Validation
     if (empty($host)) $errors[] = "Please enter the database host.";
     if (empty($name)) $errors[] = "Please enter the database name.";
     if (empty($user)) $errors[] = "Please enter the database user.";
     if (empty($adminUser)) $errors[] = "Please enter the admin username.";
-    if (empty($adminPass)) $errors[] = "Please enter the admin password.";
+    if ($adminPass === '') $errors[] = "Please enter the admin password.";
     if (empty($adminEmail)) $errors[] = "Please enter the admin email.";
     if (!filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) $errors[] = "Please enter a valid admin email.";
     if (strlen($adminUser) < 5) $errors[] = "Admin username should be at least 5 characters long.";
@@ -69,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (empty($smtpHost)) $errors[] = "Please enter the SMTP host.";
     if (empty($smtpPort)) $errors[] = "Please enter the SMTP port.";
     if (empty($smtpUser)) $errors[] = "Please enter the SMTP username.";
-    if (empty($smtpPass)) $errors[] = "Please enter the SMTP password.";
+    if ($smtpPass === '') $errors[] = "Please enter the SMTP password.";
 
     if (empty($errors)) {
         try {

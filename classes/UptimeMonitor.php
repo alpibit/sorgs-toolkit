@@ -645,11 +645,15 @@ class UptimeMonitor
         $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
 
         // Check if all required settings exist and are not empty
-        $requiredSettings = ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass'];
+        $requiredSettings = ['smtp_host', 'smtp_port', 'smtp_user'];
         foreach ($requiredSettings as $key) {
             if (!isset($settings[$key]) || empty($settings[$key])) {
                 return false;
             }
+        }
+
+        if (($settings['smtp_pass'] ?? '') === '') {
+            return false;
         }
 
         // Check if host is a proper hostname (not 'test' or 'localhost')

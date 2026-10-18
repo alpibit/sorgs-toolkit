@@ -30,6 +30,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         exit('Invalid request token.');
     }
 
+    $smtpPass = array_key_exists('smtp_pass', $_POST) ? $_POST['smtp_pass'] : '';
+    if (!is_string($smtpPass)) {
+        http_response_code(400);
+        exit('Invalid SMTP password input.');
+    }
+
     app_log_debug('Processing settings update request.');
 
     $conn = $db->connect();
@@ -63,9 +69,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 
     // Handle SMTP password separately
-    if (!empty($_POST['smtp_pass'])) {
+    if ($smtpPass !== '') {
         $stmt = $conn->prepare("UPDATE settings SET setting_value = ? WHERE setting_key = 'smtp_pass'");
-        if ($stmt->execute([$_POST['smtp_pass']])) {
+        if ($stmt->execute([$smtpPass])) {
             app_log_debug('Successfully updated SMTP password setting.');
         } else {
             error_log('Failed to update SMTP password setting.');

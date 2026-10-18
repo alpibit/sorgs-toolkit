@@ -99,10 +99,6 @@ The dashboard provides:
 - Color-coded status indicators
 - Filtering options for different views (all/down/SSL expiring)
 
-## Tests
-
-Run the cron cooldown regression checks with `php tests/cron.php`. They use temporary fixtures and a local PHP server, without accessing the application database or sending notifications.
-
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.

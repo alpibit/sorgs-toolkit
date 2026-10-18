@@ -80,10 +80,10 @@ class Installer
     private function writeConfigFile($host, $name, $user, $pass)
     {
         $configContent = "<?php\n\n";
-        $configContent .= "define('DB_HOST', '" . addslashes($host) . "');\n";
-        $configContent .= "define('DB_NAME', '" . addslashes($name) . "');\n";
-        $configContent .= "define('DB_USER', '" . addslashes($user) . "');\n";
-        $configContent .= "define('DB_PASS', '" . addslashes($pass) . "');\n\n";
+        $configContent .= "define('DB_HOST', " . var_export($host, true) . ");\n";
+        $configContent .= "define('DB_NAME', " . var_export($name, true) . ");\n";
+        $configContent .= "define('DB_USER', " . var_export($user, true) . ");\n";
+        $configContent .= "define('DB_PASS', " . var_export($pass, true) . ");\n\n";
         $configContent .= "?>";
 
         $configPath = __DIR__ . '/../config/database.php';

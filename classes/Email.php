@@ -5,7 +5,7 @@ class Email
     {
         $settings = self::getSmtpSettings();
 
-        if (empty($settings['smtp_host']) || empty($settings['smtp_port']) || empty($settings['smtp_user']) || empty($settings['smtp_pass'])) {
+        if (empty($settings['smtp_host']) || empty($settings['smtp_port']) || empty($settings['smtp_user']) || ($settings['smtp_pass'] ?? '') === '') {
             error_log("SMTP settings are incomplete. Unable to send alert email.");
             return false;
         }
