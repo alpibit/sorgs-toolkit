@@ -29,8 +29,21 @@ class SmtpClient
     private function log($message)
     {
         if ($this->debug) {
-            error_log($message);
+            error_log($this->redactCredentials($message));
         }
+    }
+
+    private function redactCredentials($message)
+    {
+        $replacements = [];
+        foreach ([(string) $this->username, (string) $this->password] as $value) {
+            if ($value !== '') {
+                $replacements[$value] = '[REDACTED]';
+                $replacements[base64_encode($value)] = '[REDACTED]';
+            }
+        }
+
+        return strtr($message, $replacements);
     }
 
     private function formatCommandForLog($command)
@@ -68,7 +81,7 @@ class SmtpClient
     {
         $this->log($this->formatCommandForLog($command));
         if (fwrite($this->socket, $command . "\r\n") === false) {
-            throw new Exception("Failed to send command: $command");
+            throw new Exception("Failed to write to SMTP connection.");
         }
     }
 
@@ -88,7 +101,7 @@ class SmtpClient
         $response = $this->receive();
         $responseCode = substr($response, 0, 3);
         if ($responseCode != $code) {
-            throw new Exception("Expected $code, but got: $response");
+            throw new Exception($this->redactCredentials("Expected $code, but got: $response"));
         }
         return $response;
     }
@@ -97,7 +110,7 @@ class SmtpClient
     {
         // Validate host before attempting connection
         if (empty($this->host) || $this->host === 'localhost' || !filter_var($this->host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)) {
-            throw new Exception("Invalid SMTP host: " . $this->host);
+            throw new Exception($this->redactCredentials("Invalid SMTP host: " . $this->host));
         }
         
         // Suppress warnings during connection attempts
@@ -115,7 +128,7 @@ class SmtpClient
         }
 
         if (!$this->socket) {
-            throw new Exception("Could not connect to $this->host:$this->port - $errstr ($errno)");
+            throw new Exception($this->redactCredentials("Could not connect to $this->host:$this->port - $errstr ($errno)"));
         }
         stream_set_timeout($this->socket, 30);
         $this->expect(220);
@@ -125,17 +138,12 @@ class SmtpClient
 
         if (!$this->secure) {
             $this->send("STARTTLS");
-            $response = $this->receive();
-            $responseCode = substr($response, 0, 3);
-            if ($responseCode == "220") {
-                if (!stream_socket_enable_crypto($this->socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
-                    throw new Exception("Failed to enable TLS encryption");
-                }
-                $this->send("EHLO " . gethostname());
-                $this->expect(250);
-            } elseif ($responseCode != "250") {
-                throw new Exception("STARTTLS failed: $response");
+            $this->expect(220);
+            if (@stream_socket_enable_crypto($this->socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT) !== true) {
+                throw new Exception("Failed to enable TLS encryption");
             }
+            $this->send("EHLO " . gethostname());
+            $this->expect(250);
         }
 
         $this->send("AUTH LOGIN");

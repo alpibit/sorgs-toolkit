@@ -72,7 +72,7 @@ class TelegramNotifier
 
         if ($result === false) {
             $error = error_get_last();
-            error_log("Telegram API request failed: " . ($error['message'] ?? 'Unknown error'));
+            error_log("Telegram API request failed: " . $this->redactToken($error['message'] ?? 'Unknown error'));
             error_log("HTTP Status: " . $httpStatus);
             return false;
         }
@@ -80,18 +80,29 @@ class TelegramNotifier
         // Decode and log the response
         $response = json_decode($result, true);
         if (!$response || !isset($response['ok'])) {
-            error_log("Invalid Telegram API response: " . $result);
+            error_log("Invalid Telegram API response: " . $this->redactToken($result));
             return false;
         }
 
         if (!$response['ok']) {
-            error_log("Telegram API error: " . ($response['description'] ?? 'Unknown error'));
-            error_log("Error code: " . ($response['error_code'] ?? 'None'));
+            error_log("Telegram API error: " . $this->redactToken($response['description'] ?? 'Unknown error'));
+            error_log("Error code: " . $this->redactToken($response['error_code'] ?? 'None'));
             return false;
         }
 
         app_log_debug('Telegram notification sent successfully to chat ' . app_mask_value($chatId));
         return true;
+    }
+
+    private function redactToken($message)
+    {
+        $message = is_scalar($message) ? (string) $message : 'Invalid error details';
+
+        return strtr($message, [
+            $this->botToken => '[REDACTED]',
+            rawurlencode($this->botToken) => '[REDACTED]',
+            urlencode($this->botToken) => '[REDACTED]'
+        ]);
     }
 
     private function getHttpStatusCode($headers)
