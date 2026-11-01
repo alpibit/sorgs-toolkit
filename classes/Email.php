@@ -112,7 +112,11 @@ class Email
             $body .= "\r\nCheck Time: " . date('Y-m-d H:i:s') . "\r\n";
 
             $smtp->sendMail($from, $to, $subject, $body);
-            $smtp->quit();
+            try {
+                $smtp->quit();
+            } catch (Exception $e) {
+                app_log_debug('SMTP shutdown failed after message acceptance: ' . $e->getMessage());
+            }
 
             app_log_debug("Alert email sent successfully to $maskedRecipient for monitor: {$monitor['name']} (Type: $alertType)");
             return true;
@@ -123,6 +127,8 @@ class Email
             }
             error_log($errorMessage);
             return false;
+        } finally {
+            $smtp->close();
         }
     }
 

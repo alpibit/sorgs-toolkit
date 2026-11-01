@@ -79,21 +79,69 @@ class SmtpClient
 
     private function send($command)
     {
+        if (!is_resource($this->socket)) {
+            throw new Exception("SMTP connection is not open.");
+        }
+
         $this->log($this->formatCommandForLog($command));
-        if (fwrite($this->socket, $command . "\r\n") === false) {
-            throw new Exception("Failed to write to SMTP connection.");
+        $data = $command . "\r\n";
+        $length = strlen($data);
+        $offset = 0;
+
+        while ($offset < $length) {
+            $written = @fwrite($this->socket, substr($data, $offset));
+            $metadata = stream_get_meta_data($this->socket);
+            if ($metadata['timed_out']) {
+                throw new Exception("SMTP write timed out.");
+            }
+            if ($written === false || $written === 0) {
+                if (feof($this->socket)) {
+                    throw new Exception("SMTP connection closed while writing.");
+                }
+                throw new Exception("Failed to write to SMTP connection.");
+            }
+            $offset += $written;
         }
     }
 
     private function receive()
     {
+        if (!is_resource($this->socket)) {
+            throw new Exception("SMTP connection is not open.");
+        }
+
         $response = '';
-        while ($line = fgets($this->socket, 515)) {
+        $line = '';
+        while (true) {
+            $chunk = @fgets($this->socket, 515);
+            $metadata = stream_get_meta_data($this->socket);
+            if ($metadata['timed_out']) {
+                throw new Exception("SMTP read timed out.");
+            }
+            if ($chunk === false) {
+                if (feof($this->socket)) {
+                    throw new Exception("SMTP connection closed while reading.");
+                }
+                throw new Exception("Failed to read from SMTP connection.");
+            }
+
+            $line .= $chunk;
+            if (substr($line, -1) !== "\n") {
+                continue;
+            }
+            if (!preg_match('/^[0-9]{3}(?:[ -][^\r\n]*)?\r?\n\z/', $line)) {
+                throw new Exception($this->redactCredentials("Invalid SMTP response: $line"));
+            }
+            if ($response !== '' && substr($line, 0, 3) !== substr($response, 0, 3)) {
+                throw new Exception($this->redactCredentials("Inconsistent SMTP response: $response$line"));
+            }
             $response .= $line;
             $this->log("RECV: $line");
-            if (substr($line, 3, 1) == ' ') break;
+            if (substr($line, 3, 1) !== '-') {
+                return $response;
+            }
+            $line = '';
         }
-        return $response;
     }
 
     private function expect($code)
@@ -177,9 +225,15 @@ class SmtpClient
         $message .= "Content-Transfer-Encoding: 8bit\r\n";
         $message .= "\r\n";
         $message .= $body;
-        $message .= "\r\n.";
 
-        $this->send($message);
+        $message = str_replace(["\r\n", "\r"], "\n", $message);
+        $message = str_replace("\n", "\r\n", $message);
+        $message = preg_replace('/^\./m', '..', $message);
+        if (substr($message, -2) !== "\r\n") {
+            $message .= "\r\n";
+        }
+
+        $this->send($message . '.');
         $this->expect(250);
     }
 
@@ -234,8 +288,19 @@ class SmtpClient
 
     public function quit()
     {
-        $this->send("QUIT");
-        $this->expect(221);
-        fclose($this->socket);
+        try {
+            $this->send("QUIT");
+            $this->expect(221);
+        } finally {
+            $this->close();
+        }
+    }
+
+    public function close()
+    {
+        if (is_resource($this->socket)) {
+            fclose($this->socket);
+        }
+        $this->socket = null;
     }
 }
