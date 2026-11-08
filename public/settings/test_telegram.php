@@ -40,7 +40,7 @@ try {
     $botToken = $stmt->fetchColumn();
 
     $stmt = $conn->query("SELECT setting_value FROM settings WHERE setting_key = 'telegram_default_chat_id'");
-    $defaultChatId = $stmt->fetchColumn();
+    $defaultChatId = trim((string) $stmt->fetchColumn());
 
     if (empty($botToken)) {
         echo json_encode([
@@ -58,12 +58,12 @@ try {
         exit;
     }
 
-    $telegram = new TelegramNotifier();
+    $telegram = new TelegramNotifier($botToken, $defaultChatId);
     $testMessage = "🔔 Test notification from " . APP_NAME . " Uptime Monitor\n" .
         "Time: " . date('Y-m-d H:i:s') . "\n" .
         "If you see this message, your Telegram notifications are working correctly!";
 
-    $result = $telegram->sendMessage($testMessage, $defaultChatId);
+    $result = $telegram->sendMessage(htmlspecialchars($testMessage, ENT_NOQUOTES | ENT_SUBSTITUTE, 'UTF-8'), $defaultChatId);
 
     if ($result) {
         echo json_encode([
@@ -73,13 +73,13 @@ try {
     } else {
         echo json_encode([
             'success' => false,
-            'error' => 'Failed to send test message'
+            'error' => $telegram->getLastError() ?? 'Failed to send test message'
         ]);
     }
 } catch (Exception $e) {
-    error_log("Telegram test error: " . $e->getMessage());
+    error_log('Telegram connection test failed (' . get_class($e) . ').');
     echo json_encode([
         'success' => false,
-        'error' => 'Error: ' . $e->getMessage()
+        'error' => 'Unable to test Telegram. Check the saved settings and try again.'
     ]);
 }

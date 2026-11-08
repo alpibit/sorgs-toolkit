@@ -146,12 +146,13 @@ $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
                 <div class="sorgs-form-group">
                     <label for="telegram_default_chat_id">Default Chat ID:</label>
                     <input type="text" id="telegram_default_chat_id" name="telegram_default_chat_id" value="<?php echo htmlspecialchars($settings['telegram_default_chat_id'] ?? ''); ?>">
-                    <small class="sorgs-form-help">This will receive all notifications if no specific chat IDs are set</small>
+                    <small class="sorgs-form-help">This chat receives all monitor notifications in addition to monitor-specific chats. Each chat receives the alert once.</small>
                 </div>
                 <div class="sorgs-form-group">
                     <button type="button" id="test-telegram-btn" data-csrf="<?php echo htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8'); ?>" class="sorgs-button sorgs-button-secondary">
                         Test Telegram Connection
                     </button>
+                    <small class="sorgs-form-help">The test uses the saved bot token and default chat ID. Save Settings before testing changes.</small>
                 </div>
             </div>
 

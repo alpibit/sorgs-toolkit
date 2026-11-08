@@ -411,7 +411,12 @@ class UptimeMonitor
             $message .= "Response Time: {$result['response_time']}ms\n";
         }
 
-        if (!empty($result['error'])) {
+        $failureMessage = $result['status'] === 'down' ? (string) ($result['message'] ?? '') : '';
+        if ($failureMessage !== '') {
+            $message .= "Message: $failureMessage\n";
+        }
+
+        if (!empty($result['error']) && strpos($failureMessage, (string) $result['error']) === false) {
             $message .= "Error: {$result['error']}\n";
         }
 
@@ -501,14 +506,15 @@ class UptimeMonitor
         }
 
         // Handle Telegram notifications
-        if (!empty($monitor['telegram_chat_ids'])) {
+        $message = htmlspecialchars($message, ENT_NOQUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $chatIds = array_unique(array_filter(array_map('trim', explode(',', $monitor['telegram_chat_ids'] ?? ''))));
+
+        if (!empty($chatIds)) {
             try {
                 $telegram = new TelegramNotifier();
                 if (!$telegram->isBotTokenConfigured()) {
                     error_log("Telegram bot token not configured. Skipping Telegram alerts.");
                 } else {
-                    $chatIds = array_filter(array_map('trim', explode(',', $monitor['telegram_chat_ids'])));
-
                     foreach ($chatIds as $chatId) {
                         try {
                             if ($telegram->sendMessage($message, $chatId)) {
@@ -542,11 +548,11 @@ class UptimeMonitor
 
         // Send to default Telegram chat if configured and not already included
         $stmt = $this->db->query("SELECT setting_value FROM settings WHERE setting_key = 'telegram_default_chat_id'");
-        $defaultChatId = $stmt->fetchColumn();
+        $defaultChatId = trim((string) $stmt->fetchColumn());
 
-        if ($defaultChatId && !in_array($defaultChatId, explode(',', $monitor['telegram_chat_ids'] ?? ''))) {
+        if ($defaultChatId && !in_array($defaultChatId, $chatIds, true)) {
             $telegram = new TelegramNotifier();
-            if ($telegram->sendMessage($message)) {
+            if ($telegram->sendMessage($message, $defaultChatId)) {
                 app_log_debug("Telegram alert sent to the default chat for monitor '{$monitor['name']}'. Alert type: $alertType");
             } else {
                 error_log("Failed to send Telegram alert to default chat ID for monitor '{$monitor['name']}'.");

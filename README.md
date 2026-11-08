@@ -67,8 +67,9 @@ Alternatively, configure an external cron service to request `https://yourdomain
 
 - Create a Telegram bot via BotFather
 - Configure the bot token in settings
-- Add chat IDs to monitors for notifications
-- Test the connection using the built-in test feature
+- Add comma-separated chat IDs to monitors for notifications
+- The optional default chat receives all monitor notifications in addition to monitor-specific chats; duplicate chat IDs receive one copy
+- Save Settings before testing the connection; the test uses the saved bot token and default chat ID
 
 ### Monitor Settings
 

@@ -4,6 +4,7 @@ class TelegramNotifier
     private $botToken;
     private $defaultChatId;
     private $apiUrl = 'https://api.telegram.org/bot';
+    private $lastError;
 
     public function __construct($botToken = null, $defaultChatId = null)
     {
@@ -20,6 +21,8 @@ class TelegramNotifier
             $this->defaultChatId = $defaultChatId;
         }
 
+        $this->defaultChatId = trim((string) $this->defaultChatId);
+
         app_log_debug('Telegram notifier initialized.');
         if (!empty($this->defaultChatId)) {
             app_log_debug('Telegram notifier default chat configured: ' . app_mask_value($this->defaultChatId));
@@ -28,13 +31,17 @@ class TelegramNotifier
 
     public function sendMessage($message, $chatId = null)
     {
+        $this->lastError = null;
         if (!$this->botToken) {
+            $this->lastError = 'Telegram bot token is not configured.';
             error_log("Telegram notification failed: Bot token not configured");
             return false;
         }
 
-        $chatId = $chatId ?: $this->defaultChatId;
+        $chatId = trim((string) ($chatId ?? ''));
+        $chatId = $chatId !== '' ? $chatId : $this->defaultChatId;
         if (!$chatId) {
+            $this->lastError = 'No Telegram chat ID is configured.';
             error_log("Telegram notification failed: No chat ID provided");
             return false;
         }
@@ -71,6 +78,7 @@ class TelegramNotifier
         $httpStatus = $this->getHttpStatusCode($responseHeaders);
 
         if ($result === false) {
+            $this->lastError = 'Could not reach Telegram. Check the server network connection and try again.';
             $error = error_get_last();
             error_log("Telegram API request failed: " . $this->redactToken($error['message'] ?? 'Unknown error'));
             error_log("HTTP Status: " . $httpStatus);
@@ -79,19 +87,26 @@ class TelegramNotifier
 
         // Decode and log the response
         $response = json_decode($result, true);
-        if (!$response || !isset($response['ok'])) {
+        if (!is_array($response) || !isset($response['ok']) || !is_bool($response['ok'])) {
+            $this->lastError = 'Telegram returned an invalid response. Try again later.';
             error_log("Invalid Telegram API response: " . $this->redactToken($result));
             return false;
         }
 
         if (!$response['ok']) {
-            error_log("Telegram API error: " . $this->redactToken($response['description'] ?? 'Unknown error'));
+            $this->lastError = "Telegram API error: " . $this->redactToken($response['description'] ?? 'Unknown error');
+            error_log($this->lastError);
             error_log("Error code: " . $this->redactToken($response['error_code'] ?? 'None'));
             return false;
         }
 
         app_log_debug('Telegram notification sent successfully to chat ' . app_mask_value($chatId));
         return true;
+    }
+
+    public function getLastError()
+    {
+        return $this->lastError;
     }
 
     private function redactToken($message)
@@ -118,12 +133,13 @@ class TelegramNotifier
     public function testConnection()
     {
         if (!$this->botToken || !$this->defaultChatId) {
+            $this->lastError = 'Telegram bot token and default chat ID must be configured.';
             error_log("Cannot test Telegram connection: Missing configuration");
             return false;
         }
 
         $testMessage = "🔔 Test notification from " . APP_NAME . " Uptime Monitor";
-        return $this->sendMessage($testMessage);
+        return $this->sendMessage(htmlspecialchars($testMessage, ENT_NOQUOTES | ENT_SUBSTITUTE, 'UTF-8'));
     }
 
     /**

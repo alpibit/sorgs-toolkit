@@ -333,7 +333,7 @@ if (isset($_GET['message'])) {
                 <div class="sorgs-form-group">
                     <label for="telegram_chat_ids">Telegram Chat IDs (comma-separated):</label>
                     <input type="text" id="telegram_chat_ids" name="telegram_chat_ids" value="<?php echo isset($monitorData['telegram_chat_ids']) ? htmlspecialchars($monitorData['telegram_chat_ids']) : ''; ?>">
-                    <small class="sorgs-form-help">Enter Telegram chat IDs separated by commas. These IDs will receive notifications.</small>
+                    <small class="sorgs-form-help">Enter chat IDs separated by commas. These chats and the configured default chat receive this monitor's notifications.</small>
                 </div>
 
                 <div class="sorgs-form-group">
