@@ -279,8 +279,10 @@ class UptimeMonitor
 
     private function handleDowntime($monitor, $result)
     {
-        $this->sendAlert($monitor, $result, 'down');
-        $this->setAlertTime($monitor['id'], 'downtime', time());
+        $delivery = $this->sendAlert($monitor, $result, 'down');
+        if ($delivery['accepted'] > 0) {
+            $this->setAlertTime($monitor['id'], 'downtime', time());
+        }
     }
 
     private function handleContinuedDowntime($monitor, $result)
@@ -291,8 +293,10 @@ class UptimeMonitor
         if ($lastAlertTime === null || ($currentTime - $lastAlertTime) >= $this->alertCooldownPeriod) {
             $result['message'] .= " (Still down after {$monitor['consecutive_failures']} checks)";
             $result['consecutive_failures'] = $monitor['consecutive_failures'];
-            $this->sendAlert($monitor, $result, 'still_down');
-            $this->setAlertTime($monitor['id'], 'downtime', $currentTime);
+            $delivery = $this->sendAlert($monitor, $result, 'still_down');
+            if ($delivery['accepted'] > 0) {
+                $this->setAlertTime($monitor['id'], 'downtime', $currentTime);
+            }
         }
     }
 
@@ -311,8 +315,10 @@ class UptimeMonitor
             return;
         }
 
-        $this->sendAlert($monitor, $result, 'ssl_expiring');
-        $this->setAlertTime($monitor['id'], 'ssl', $currentTime);
+        $delivery = $this->sendAlert($monitor, $result, 'ssl_expiring');
+        if ($delivery['accepted'] > 0) {
+            $this->setAlertTime($monitor['id'], 'ssl', $currentTime);
+        }
     }
 
     private function handleRecovery($monitor, $result)
@@ -371,7 +377,7 @@ class UptimeMonitor
 
     public function sendAlert($monitor, $result, $alertType = 'down')
     {
-        $allSent = true;
+        $delivery = ['accepted' => 0, 'failed' => 0, 'skipped' => 0];
 
         $status = ucfirst($result['status']);
 
@@ -444,123 +450,142 @@ class UptimeMonitor
         }
 
         // Handle email notifications
-        $adminEmail = $this->getAdminEmail();
-        $notificationEmails = !empty($monitor['notification_emails']) ?
-            array_filter(explode(' ', $monitor['notification_emails'])) : [];
+        $uniqueEmails = [];
+        try {
+            $adminEmail = $this->getAdminEmail();
+            $notificationEmails = !empty($monitor['notification_emails']) ?
+                array_filter(explode(' ', $monitor['notification_emails'])) : [];
 
-        if ($adminEmail) {
-            $notificationEmails[] = $adminEmail;
-        }
+            if ($adminEmail) {
+                $notificationEmails[] = $adminEmail;
+            }
 
-        $uniqueEmails = array_unique(array_filter($notificationEmails));
+            $uniqueEmails = array_unique(array_filter($notificationEmails));
+            $smtpConfigured = !empty($uniqueEmails) && $this->isSmtpConfigured();
 
-        // Don't attempt email alerts if SMTP settings aren't configured properly
-        $smtpConfigured = $this->isSmtpConfigured();
+            if (!empty($uniqueEmails) && !$smtpConfigured) {
+                error_log("SMTP is not properly configured. Skipping email alerts.");
+            }
 
-        if ($smtpConfigured) {
             foreach ($uniqueEmails as $email) {
-                if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                    try {
-                        $emailResult = [
-                            'status' => $result['status'],
-                            'message' => $result['message'],
-                            'http_code' => $result['http_code'] ?? null,
-                            'response_time' => $result['response_time'] ?? null,
-                            'download_size' => $result['download_size'] ?? null,
-                            'error' => $result['error'] ?? null,
-                            'ssl_info' => $result['ssl_info'] ?? null,
-                            'alert_type' => $alertType,
-                            'downtime_duration' => $result['downtime_duration'] ?? null,
-                            'consecutive_failures' => $result['consecutive_failures'] ?? null
-                        ];
-
-                        if (Email::sendAlert($monitor, $emailResult, $email, $subject)) {
-                            app_log_debug(
-                                "Email alert sent to " . app_mask_email($email)
-                                . " for monitor '{$monitor['name']}'. Alert type: $alertType"
-                            );
-                        } else {
-                            error_log(
-                                "Failed to send email alert to " . app_mask_email($email)
-                                . " for monitor '{$monitor['name']}'."
-                            );
-                            $allSent = false;
-                        }
-                    } catch (Exception $e) {
-                        $errorMessage = "Error sending email alert to " . app_mask_email($email)
-                            . " for monitor '{$monitor['name']}'.";
-                        if (app_debug_enabled()) {
-                            $errorMessage .= ' ' . $e->getMessage();
-                        }
-                        error_log($errorMessage);
-                        $allSent = false;
-                    }
-                } else {
+                if (!$smtpConfigured) {
+                    $delivery['skipped']++;
+                    continue;
+                }
+                if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
                     error_log("Invalid email address provided for monitor '{$monitor['name']}'.");
-                    $allSent = false;
+                    $delivery['skipped']++;
+                    continue;
+                }
+
+                try {
+                    $emailResult = [
+                        'status' => $result['status'],
+                        'message' => $result['message'],
+                        'http_code' => $result['http_code'] ?? null,
+                        'response_time' => $result['response_time'] ?? null,
+                        'download_size' => $result['download_size'] ?? null,
+                        'error' => $result['error'] ?? null,
+                        'ssl_info' => $result['ssl_info'] ?? null,
+                        'alert_type' => $alertType,
+                        'downtime_duration' => $result['downtime_duration'] ?? null,
+                        'consecutive_failures' => $result['consecutive_failures'] ?? null
+                    ];
+
+                    if (Email::sendAlert($monitor, $emailResult, $email, $subject)) {
+                        $delivery['accepted']++;
+                        app_log_debug(
+                            "Email alert sent to " . app_mask_email($email)
+                            . " for monitor '{$monitor['name']}'. Alert type: $alertType"
+                        );
+                    } else {
+                        $delivery['failed']++;
+                        error_log(
+                            "Failed to send email alert to " . app_mask_email($email)
+                            . " for monitor '{$monitor['name']}'."
+                        );
+                    }
+                } catch (Exception $e) {
+                    $delivery['failed']++;
+                    $errorMessage = "Error sending email alert to " . app_mask_email($email)
+                        . " for monitor '{$monitor['name']}'.";
+                    if (app_debug_enabled()) {
+                        $errorMessage .= ' ' . $e->getMessage();
+                    }
+                    error_log($errorMessage);
                 }
             }
-        } else {
-            error_log("SMTP is not properly configured. Skipping email alerts.");
-            // Don't count missing email configuration as a failure
+        } catch (Exception $e) {
+            $delivery['failed'] += max(1, count($uniqueEmails));
+            error_log("Error initializing email notifications for monitor '{$monitor['name']}'.");
         }
 
         // Handle Telegram notifications
         $message = htmlspecialchars($message, ENT_NOQUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $chatIds = array_unique(array_filter(array_map('trim', explode(',', $monitor['telegram_chat_ids'] ?? ''))));
 
-        if (!empty($chatIds)) {
-            try {
+        try {
+            $stmt = $this->db->query("SELECT setting_value FROM settings WHERE setting_key = 'telegram_default_chat_id'");
+            $defaultChatId = trim((string) $stmt->fetchColumn());
+            if ($defaultChatId && !in_array($defaultChatId, $chatIds, true)) {
+                $chatIds[] = $defaultChatId;
+            }
+
+            if (!empty($chatIds)) {
                 $telegram = new TelegramNotifier();
                 if (!$telegram->isBotTokenConfigured()) {
+                    $delivery['skipped'] += count($chatIds);
                     error_log("Telegram bot token not configured. Skipping Telegram alerts.");
                 } else {
                     foreach ($chatIds as $chatId) {
                         try {
                             if ($telegram->sendMessage($message, $chatId)) {
+                                $delivery['accepted']++;
                                 app_log_debug(
                                     "Telegram alert sent to chat " . app_mask_value($chatId)
                                     . " for monitor '{$monitor['name']}'. Alert type: $alertType"
                                 );
                             } else {
+                                $delivery['failed']++;
                                 error_log(
                                     "Failed to send Telegram alert to chat " . app_mask_value($chatId)
                                     . " for monitor '{$monitor['name']}'."
                                 );
-                                $allSent = false;
                             }
                         } catch (Exception $e) {
+                            $delivery['failed']++;
                             $errorMessage = "Error sending Telegram alert to chat " . app_mask_value($chatId)
                                 . " for monitor '{$monitor['name']}'.";
                             if (app_debug_enabled()) {
                                 $errorMessage .= ' ' . $e->getMessage();
                             }
                             error_log($errorMessage);
-                            $allSent = false;
                         }
                     }
                 }
-            } catch (Exception $e) {
-                error_log("Error initializing Telegram notifications: " . $e->getMessage());
-                $allSent = false;
             }
+        } catch (Exception $e) {
+            $delivery['failed'] += max(1, count($chatIds));
+            error_log("Error initializing Telegram notifications for monitor '{$monitor['name']}'.");
         }
 
-        // Send to default Telegram chat if configured and not already included
-        $stmt = $this->db->query("SELECT setting_value FROM settings WHERE setting_key = 'telegram_default_chat_id'");
-        $defaultChatId = trim((string) $stmt->fetchColumn());
-
-        if ($defaultChatId && !in_array($defaultChatId, $chatIds, true)) {
-            $telegram = new TelegramNotifier();
-            if ($telegram->sendMessage($message, $defaultChatId)) {
-                app_log_debug("Telegram alert sent to the default chat for monitor '{$monitor['name']}'. Alert type: $alertType");
-            } else {
-                error_log("Failed to send Telegram alert to default chat ID for monitor '{$monitor['name']}'.");
-                $allSent = false;
-            }
+        if ($delivery['accepted'] === 0) {
+            $outcome = 'not sent';
+        } elseif ($delivery['failed'] > 0 || $delivery['skipped'] > 0) {
+            $outcome = 'partially sent';
+        } else {
+            $outcome = 'sent';
         }
 
-        return $allSent;
+        $summary = "Notification for monitor '{$monitor['name']}' ($alertType): $outcome. "
+            . "Accepted: {$delivery['accepted']}, failed: {$delivery['failed']}, skipped: {$delivery['skipped']}.";
+        if ($outcome === 'sent') {
+            app_log_debug($summary);
+        } else {
+            error_log($summary);
+        }
+
+        return $delivery;
     }
 
     private function getAdminEmail()

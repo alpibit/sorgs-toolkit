@@ -13,7 +13,7 @@ class Email
         // For new installations or test environments, avoid sending emails with dummy settings
         if ($settings['smtp_host'] === 'test' || $settings['smtp_host'] === 'localhost') {
             error_log("Skipping email alert - SMTP host is set to '{$settings['smtp_host']}'. Configure proper SMTP settings.");
-            return true; // Return true to avoid flooding logs during initial setup
+            return false;
         }
 
         $from = trim((string) ($settings['mail_from'] ?? ''));

@@ -133,10 +133,15 @@ switch ($action) {
                         'valid_to_time' => strtotime('+20 days')
                     ]
                 ];
-                if ($monitor->sendAlert($monitorData, $testResult)) {
+                $delivery = $monitor->sendAlert($monitorData, $testResult);
+                if ($delivery['accepted'] > 0 && $delivery['failed'] === 0 && $delivery['skipped'] === 0) {
                     $message = "Test notifications sent successfully for monitor '{$monitorData['name']}'.";
+                } elseif ($delivery['accepted'] > 0) {
+                    $message = "Test notifications were partially sent for monitor '{$monitorData['name']}'. Some deliveries failed or were skipped. Check notification settings and error logs for details.";
+                } elseif ($delivery['failed'] > 0) {
+                    $message = "No test notifications were sent for monitor '{$monitorData['name']}'. Delivery failed. Check notification settings and error logs for details.";
                 } else {
-                    $message = "Some or all test notifications failed to send for monitor '{$monitorData['name']}'. Check error logs for details.";
+                    $message = "No test notifications were sent for monitor '{$monitorData['name']}'. Configure a notification channel and valid recipients.";
                 }
             } else {
                 $message = "Monitor not found.";
