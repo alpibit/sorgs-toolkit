@@ -47,6 +47,7 @@ class Email
             }
 
             $alertType = $result['alert_type'] ?? 'down';
+            $notificationTime = $result['recovered_at'] ?? time();
 
             if ($alertType === 'recovery') {
                 $body = "RECOVERY NOTIFICATION\r\n";
@@ -100,7 +101,7 @@ class Email
 
                 // Calculate days until expiry
                 if (isset($result['ssl_info']['valid_to_time'])) {
-                    $daysRemaining = ceil(($result['ssl_info']['valid_to_time'] - time()) / (60 * 60 * 24));
+                    $daysRemaining = ceil(($result['ssl_info']['valid_to_time'] - $notificationTime) / (60 * 60 * 24));
                     $body .= "Days Until Expiry: {$daysRemaining}\r\n";
 
                     if ($daysRemaining <= 30) {
@@ -109,7 +110,7 @@ class Email
                 }
             }
 
-            $body .= "\r\nCheck Time: " . date('Y-m-d H:i:s') . "\r\n";
+            $body .= "\r\nCheck Time: " . date('Y-m-d H:i:s', $notificationTime) . "\r\n";
 
             $smtp->sendMail($from, $to, $subject, $body);
             try {

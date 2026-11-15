@@ -104,7 +104,13 @@ class UptimeMonitor
 
             error_log("Checked {$monitor['name']}: {$currentStatus} (was: {$previousStatus}) - {$result['message']}");
 
-            if ($previousStatus !== $currentStatus && $previousStatus !== null) {
+            if ($currentStatus === 'down' && !empty($monitor['pending_recovery'])) {
+                $this->setPendingRecovery($monitor['id'], null);
+            }
+
+            if ($currentStatus === 'up' && !empty($monitor['pending_recovery'])) {
+                $this->retryRecovery($monitor);
+            } elseif ($previousStatus !== $currentStatus && $previousStatus !== null) {
                 if ($currentStatus === 'down') {
                     $this->handleDowntime($monitor, $result);
                 } elseif ($currentStatus === 'up') {
@@ -323,12 +329,41 @@ class UptimeMonitor
 
     private function handleRecovery($monitor, $result)
     {
+        $result['recovered_at'] = time();
         $downtimeDuration = $this->calculateDowntimeDuration($monitor);
         $result['downtime_duration'] = $downtimeDuration;
         $result['consecutive_failures'] = $monitor['consecutive_failures'];
 
-        $this->sendAlert($monitor, $result, 'recovery');
+        $delivery = $this->sendAlert($monitor, $result, 'recovery');
+        if ($delivery['accepted'] === 0 && $delivery['attempted'] > 0) {
+            $this->setPendingRecovery($monitor['id'], [
+                'name' => $monitor['name'],
+                'url' => $monitor['url'],
+                'result' => $result
+            ]);
+        }
         $this->setAlertTime($monitor['id'], 'downtime', null);
+    }
+
+    private function retryRecovery($monitor)
+    {
+        $recovery = json_decode($monitor['pending_recovery'], true, 512, JSON_THROW_ON_ERROR);
+        $monitor['name'] = $recovery['name'];
+        $monitor['url'] = $recovery['url'];
+
+        $delivery = $this->sendAlert($monitor, $recovery['result'], 'recovery');
+        if ($delivery['accepted'] > 0) {
+            $this->setPendingRecovery($monitor['id'], null);
+        }
+    }
+
+    private function setPendingRecovery($monitorId, $recovery)
+    {
+        $stmt = $this->db->prepare("UPDATE monitors SET pending_recovery = :recovery WHERE id = :id");
+        $stmt->execute([
+            ':recovery' => $recovery === null ? null : json_encode($recovery, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE),
+            ':id' => $monitorId
+        ]);
     }
 
     private function calculateDowntimeDuration($monitor)
@@ -377,7 +412,8 @@ class UptimeMonitor
 
     public function sendAlert($monitor, $result, $alertType = 'down')
     {
-        $delivery = ['accepted' => 0, 'failed' => 0, 'skipped' => 0];
+        $delivery = ['accepted' => 0, 'failed' => 0, 'skipped' => 0, 'attempted' => 0];
+        $notificationTime = $result['recovered_at'] ?? time();
 
         $status = ucfirst($result['status']);
 
@@ -407,7 +443,7 @@ class UptimeMonitor
         }
 
         $message .= "URL: {$monitor['url']}\n";
-        $message .= "Time: " . date('Y-m-d H:i:s') . "\n";
+        $message .= "Time: " . date('Y-m-d H:i:s', $notificationTime) . "\n";
 
         if (isset($result['http_code'])) {
             $message .= "HTTP Status: {$result['http_code']}\n";
@@ -430,7 +466,7 @@ class UptimeMonitor
             $message .= "\n📊 Downtime Summary:\n";
             $message .= "Duration: {$result['downtime_duration']}\n";
             $message .= "Failed Checks: {$result['consecutive_failures']}\n";
-            $message .= "Recovery Time: " . date('Y-m-d H:i:s') . "\n";
+            $message .= "Recovery Time: " . date('Y-m-d H:i:s', $notificationTime) . "\n";
         }
 
         // Add SSL certificate information if available
@@ -440,7 +476,7 @@ class UptimeMonitor
 
             // Calculate days until expiry
             if (isset($result['ssl_info']['valid_to_time'])) {
-                $daysRemaining = ceil(($result['ssl_info']['valid_to_time'] - time()) / (60 * 60 * 24));
+                $daysRemaining = ceil(($result['ssl_info']['valid_to_time'] - $notificationTime) / (60 * 60 * 24));
                 $message .= "Days Until Expiry: {$daysRemaining}\n";
 
                 if ($daysRemaining <= 30) {
@@ -489,9 +525,11 @@ class UptimeMonitor
                         'ssl_info' => $result['ssl_info'] ?? null,
                         'alert_type' => $alertType,
                         'downtime_duration' => $result['downtime_duration'] ?? null,
-                        'consecutive_failures' => $result['consecutive_failures'] ?? null
+                        'consecutive_failures' => $result['consecutive_failures'] ?? null,
+                        'recovered_at' => $result['recovered_at'] ?? null
                     ];
 
+                    $delivery['attempted']++;
                     if (Email::sendAlert($monitor, $emailResult, $email, $subject)) {
                         $delivery['accepted']++;
                         app_log_debug(
@@ -539,6 +577,7 @@ class UptimeMonitor
                 } else {
                     foreach ($chatIds as $chatId) {
                         try {
+                            $delivery['attempted']++;
                             if ($telegram->sendMessage($message, $chatId)) {
                                 $delivery['accepted']++;
                                 app_log_debug(

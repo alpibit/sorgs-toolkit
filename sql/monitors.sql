@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS `monitors` (
     `last_error` text,
     `last_alert_time` timestamp NULL DEFAULT NULL,
     `last_ssl_alert_time` timestamp NULL DEFAULT NULL,
+    `pending_recovery` text DEFAULT NULL,
     `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     `ssl_expiry` datetime DEFAULT NULL,
