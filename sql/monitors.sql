@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS `monitors` (
+CREATE TABLE `monitors` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `name` varchar(255) NOT NULL,
     `url` varchar(255) NOT NULL,

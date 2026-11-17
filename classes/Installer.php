@@ -2,23 +2,44 @@
 class Installer
 {
     private $conn;
+    private $createdTables = [];
+    private $stagedConfig;
 
     public function install($adminUser, $adminPass, $adminEmail, $host, $name, $user, $pass, $smtpHost, $smtpPort, $smtpUser, $smtpPass)
     {
-        try {
-            try {
-                $testDb = new PDO("mysql:host=$host;dbname=$name", $user, $pass);
-                $testDb->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-            } catch (PDOException $e) {
-                $errorMessage = "Database connection test failed: " . $e->getMessage();
+        $this->conn = null;
+        $this->createdTables = [];
+        $this->stagedConfig = null;
+        $lock = null;
+        $configPath = __DIR__ . '/../config/database.php';
 
-                if ($e->getCode() == 2002) {
+        try {
+            $lock = @fopen(__DIR__ . '/../config/install.lock', 'c+');
+            if (!$lock) {
+                throw new InstallerError('Unable to open the installation lock. Please make sure the config directory is writable.');
+            }
+            if (!flock($lock, LOCK_EX | LOCK_NB)) {
+                throw new InstallerError('Another installation is running. Please wait for it to finish before trying again.');
+            }
+            $this->checkConfigPath($configPath);
+            $schemas = $this->loadSchemas();
+
+            try {
+                $this->conn = new PDO("mysql:host=$host;dbname=$name;charset=utf8mb4", $user, $pass, [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
+                ]);
+            } catch (PDOException $e) {
+                error_log('Database connection test failed: ' . $e->getMessage());
+                $errorMessage = 'Unable to connect to the database. Check the connection settings and server error log.';
+                $errorCode = $e->errorInfo[1] ?? $e->getCode();
+
+                if ($errorCode == 2002) {
                     $errorMessage = "Cannot connect to database server at '$host'. Please verify the hostname is correct and the server is running.";
-                } elseif ($e->getCode() == 1045) {
+                } elseif ($errorCode == 1045) {
                     $errorMessage = "Access denied to database. Please verify your username and password.";
-                } elseif ($e->getCode() == 1049) {
+                } elseif ($errorCode == 1049) {
                     $errorMessage = "Database '$name' does not exist. Please create it first or check the name.";
-                } elseif ($e->getCode() == 1044) {
+                } elseif ($errorCode == 1044) {
                     $errorMessage = "Access denied for user '$user' to database '$name'. This could mean either: 
                     1) The database '$name' doesn't exist (verify the database name is correct)
                     2) The user '$user' doesn't have sufficient permissions to access this database";
@@ -27,28 +48,34 @@ class Installer
                 throw new InstallerError($errorMessage);
             }
 
-            $this->writeConfigFile($host, $name, $user, $pass);
-
-            require_once __DIR__ . '/../config/database.php';
-
-            $db = new Database();
-            $this->conn = $db->connect();
             $this->checkIfTablesExist();
+            $this->writeConfigFile($host, $name, $user, $pass);
+            $this->setupTables($schemas);
 
-            $this->setupTables();
+            if (!$this->conn->beginTransaction()) {
+                throw new Exception('Unable to begin the installation transaction.');
+            }
             $this->setDefaultSettings($adminEmail);
             $this->createAdminUser($adminUser, $adminPass, $adminEmail);
             $this->setSmtpSettings($smtpHost, $smtpPort, $smtpUser, $smtpPass);
             $this->setMailFrom($smtpUser, $adminEmail);
             $this->flagAsInstalled();
+            if (!$this->conn->commit()) {
+                throw new Exception('Unable to commit the installation transaction.');
+            }
+
+            $this->checkConfigPath($configPath);
+            if (!@rename($this->stagedConfig, $configPath)) {
+                throw new InstallerError('Unable to publish the database configuration. Please check the config directory permissions.');
+            }
+            $this->stagedConfig = null;
 
             return true;
         } catch (Throwable $e) {
             error_log('Installation failed: ' . $e->getMessage());
 
-            $configPath = __DIR__ . '/../config/database.php';
-            if (file_exists($configPath)) {
-                unlink($configPath);
+            if (!$this->cleanup()) {
+                throw new InstallerError('Installation failed and cleanup could not finish. Check the server error log for files or tables that still need cleanup before retrying.');
             }
 
             if ($e instanceof InstallerError) {
@@ -61,6 +88,19 @@ class Installer
             }
 
             throw new InstallerError($errorMessage);
+        } finally {
+            if (is_resource($lock)) {
+                fclose($lock);
+            }
+            $this->conn = null;
+        }
+    }
+
+    private function checkConfigPath($configPath)
+    {
+        clearstatcache(true, $configPath);
+        if (file_exists($configPath) || is_link($configPath)) {
+            throw new InstallerError('Database configuration already exists. The installer cannot overwrite it.');
         }
     }
 
@@ -69,9 +109,12 @@ class Installer
         $tablesToCheck = ['monitors', 'settings', 'users'];
         foreach ($tablesToCheck as $table) {
             try {
-                $stmt = $this->conn->query("SELECT 1 FROM `$table` LIMIT 1");
+                $this->conn->query("SELECT 1 FROM `$table` LIMIT 1");
             } catch (PDOException $e) {
-                continue;
+                if (($e->errorInfo[1] ?? null) === 1146) {
+                    continue;
+                }
+                throw $e;
             }
             throw new InstallerError("The database already contains a table named '$table'. It seems an installation already exists. Please use a different database, or clear the existing tables.");
         }
@@ -86,50 +129,91 @@ class Installer
         $configContent .= "define('DB_PASS', " . var_export($pass, true) . ");\n\n";
         $configContent .= "?>";
 
-        $configPath = __DIR__ . '/../config/database.php';
-        if (file_put_contents($configPath, $configContent) === false) {
-            throw new InstallerError("Unable to write config file. Please make sure the config directory is writable.");
+        $path = __DIR__ . '/../config/.database-' . bin2hex(random_bytes(16)) . '.php';
+        $mask = umask(0077);
+        try {
+            $file = @fopen($path, 'x');
+        } finally {
+            umask($mask);
         }
+        if (!$file) {
+            throw new InstallerError('Unable to stage the database configuration. Please make sure the config directory is writable.');
+        }
+        $this->stagedConfig = $path;
 
-        chmod($configPath, 0600);
+        try {
+            if (!chmod($path, 0600)) {
+                throw new InstallerError('Unable to secure the database configuration permissions.');
+            }
+            if (fwrite($file, $configContent) !== strlen($configContent) || !fflush($file)) {
+                throw new InstallerError('Unable to write the database configuration. Check available disk space and config directory permissions.');
+            }
+        } finally {
+            fclose($file);
+        }
     }
 
-    private function setupTables()
+    private function loadSchemas()
     {
-        $sqlFiles = ['sql/settings.sql', 'sql/users.sql', 'sql/monitors.sql'];
-        foreach ($sqlFiles as $file) {
-            $this->executeSQLFromFile($file);
+        $schemas = [];
+        foreach (['settings', 'users', 'monitors'] as $table) {
+            $path = __DIR__ . '/../sql/' . $table . '.sql';
+            $sql = @file_get_contents($path);
+            if ($sql === false || trim($sql) === '') {
+                throw new InstallerError("Unable to read the schema for '$table'. Check the application SQL files.");
+            }
+            $schemas[$table] = array_values(array_filter(array_map('trim', explode(';', $sql))));
+            if (!preg_match('/\ACREATE TABLE `' . $table . '`\s*\(/i', $schemas[$table][0] ?? '')) {
+                throw new InstallerError("Invalid schema for '$table'. Check the application SQL files.");
+            }
         }
+
+        return $schemas;
     }
 
-    private function executeSQLFromFile($filePath)
+    private function setupTables($schemas)
     {
-        $fullPath = __DIR__ . '/../' . $filePath;
-        if (!file_exists($fullPath)) {
-            throw new Exception("SQL file not found: $fullPath");
-        }
-
-        $query = file_get_contents($fullPath);
-        if ($query === false) {
-            throw new Exception("Unable to read SQL file: $fullPath");
-        }
-
-        if (empty(trim($query))) {
-            throw new Exception("SQL file is empty: $fullPath");
-        }
-
-        $statements = explode(';', $query);
-        foreach ($statements as $statement) {
-            if (trim($statement) != '') {
-                $stmt = $this->conn->prepare($statement);
-                if ($stmt === false) {
-                    throw new Exception("Failed to prepare SQL query from file: $fullPath");
-                }
-                if (!$stmt->execute()) {
-                    throw new Exception("Failed to execute SQL query from file: $fullPath. Error: " . implode(", ", $stmt->errorInfo()));
+        foreach ($schemas as $table => $statements) {
+            if ($this->conn->exec(array_shift($statements)) === false) {
+                throw new Exception("Failed to create table '$table'.");
+            }
+            $this->createdTables[] = $table;
+            foreach ($statements as $statement) {
+                if ($this->conn->exec($statement) === false) {
+                    throw new Exception("Failed to complete the schema for '$table'.");
                 }
             }
         }
+    }
+
+    private function cleanup()
+    {
+        $complete = true;
+        if ($this->conn !== null) {
+            try {
+                if ($this->conn->inTransaction() && !$this->conn->rollBack()) {
+                    throw new Exception('Unable to roll back the installation transaction.');
+                }
+            } catch (Throwable $e) {
+                error_log('Installation rollback failed: ' . $e->getMessage());
+                $complete = false;
+            }
+        }
+        foreach (array_reverse($this->createdTables) as $table) {
+            try {
+                if ($this->conn->exec("DROP TABLE IF EXISTS `$table`") === false) {
+                    throw new Exception("Unable to remove table '$table'.");
+                }
+            } catch (Throwable $e) {
+                error_log("Installation cleanup failed for '$table': " . $e->getMessage());
+                $complete = false;
+            }
+        }
+        if ($this->stagedConfig !== null && !@unlink($this->stagedConfig)) {
+            error_log('Unable to remove staged database configuration: ' . $this->stagedConfig);
+            $complete = false;
+        }
+        return $complete;
     }
 
     private function setDefaultSettings($adminEmail)
@@ -139,6 +223,7 @@ class Installer
             ['date_format', 'Y-m-d'],
             ['time_format', 'H:i:s'],
             ['check_interval', '300'],
+            ['notification_email', ''],
             ['admin_email', $adminEmail],
             ['installed', 'false'],
             ['alert_cooldown', '3600'],

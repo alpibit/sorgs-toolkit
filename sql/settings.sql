@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS `settings` (
+CREATE TABLE `settings` (
     `id` int(11) NOT NULL AUTO_INCREMENT,
     `setting_key` varchar(255) NOT NULL,
     `setting_value` text,
@@ -7,29 +7,6 @@ CREATE TABLE IF NOT EXISTS `settings` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `setting_key` (`setting_key`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
-
-INSERT INTO
-    `settings` (`setting_key`, `setting_value`)
-VALUES
-    ('timezone', 'UTC'),
-    ('date_format', 'Y-m-d'),
-    ('time_format', 'H:i:s'),
-    ('check_interval', '300'),
-    ('notification_email', ''),
-    ('admin_email', ''),
-    ('installed', 'false'),
-    ('smtp_host', ''),
-    ('smtp_port', ''),
-    ('smtp_user', ''),
-    ('smtp_pass', ''),
-    ('mail_from', ''),
-    ('telegram_bot_token', ''),
-    ('telegram_default_chat_id', ''),
-    ('alert_cooldown', '3600') ON DUPLICATE KEY
-UPDATE
-    `setting_value` =
-VALUES
-    (`setting_value`);
 
 CREATE INDEX idx_settings_updated_at ON `settings` (`updated_at`);
 
