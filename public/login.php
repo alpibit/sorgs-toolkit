@@ -31,6 +31,7 @@ if ($user->isLoggedIn() && $user->isAdmin()) {
 }
 
 $error = '';
+$username = '';
 
 // Generate a simple math captcha
 function generateMathCaptcha()
@@ -52,9 +53,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         exit('Invalid request token.');
     }
 
-    $username = $_POST['username'];
-    $password = $_POST['password'];
-    $captcha_answer = isset($_POST['captcha_answer']) ? intval($_POST['captcha_answer']) : 0;
+    $username = is_string($_POST['username'] ?? null) ? $_POST['username'] : '';
+    $password = is_string($_POST['password'] ?? null) ? $_POST['password'] : null;
+    $captchaInput = is_string($_POST['captcha_answer'] ?? null) ? trim($_POST['captcha_answer']) : '';
+    $captcha_answer = preg_match('/^[+-]?[0-9]+$/D', $captchaInput) ? (int)$captchaInput : null;
     $expected_answer = $_SESSION['captcha_answer']; // Store the current answer before generating a new one
 
     usleep(rand(200000, 500000));
@@ -66,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $user->trackFailedLogin();
         $error = 'Incorrect captcha answer.';
         $_SESSION['captcha_question'] = generateMathCaptcha();
-    } elseif ($user->login($username, $password) && $user->isAdmin()) {
+    } elseif ($username !== '' && $password !== null && $user->login($username, $password) && $user->isAdmin()) {
         $user->resetLoginAttempts();
         header('Location: /public/index.php');
         exit;
@@ -98,7 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <?php echo csrf_field(); ?>
             <div class="sorgs-form-group">
                 <label for="username">Username:</label>
-                <input type="text" id="username" name="username" required>
+                <input type="text" id="username" name="username" required value="<?php echo htmlspecialchars($username); ?>">
             </div>
 
             <div class="sorgs-form-group">

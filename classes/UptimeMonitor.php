@@ -49,7 +49,7 @@ class UptimeMonitor
                 telegram_chat_ids = :telegram_chat_ids 
                 WHERE id = :id";
         $stmt = $this->db->prepare($sql);
-        return $stmt->execute([
+        $result = $stmt->execute([
             ':id' => $id,
             ':name' => $name,
             ':url' => $url,
@@ -59,13 +59,14 @@ class UptimeMonitor
             ':emails' => $notificationEmails,
             ':telegram_chat_ids' => $telegramChatIds
         ]);
+        return $result && ($stmt->rowCount() > 0 || $this->getMonitor($id) !== false);
     }
 
     public function deleteMonitor($id)
     {
         $sql = "DELETE FROM monitors WHERE id = :id";
         $stmt = $this->db->prepare($sql);
-        return $stmt->execute([':id' => $id]);
+        return $stmt->execute([':id' => $id]) && $stmt->rowCount() > 0;
     }
 
     public function getMonitor($id)

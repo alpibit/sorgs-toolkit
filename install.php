@@ -11,6 +11,16 @@ app_session_start();
 
 $errors = [];
 $success = false;
+$formValues = [
+    'db_host' => 'localhost',
+    'db_name' => '',
+    'db_user' => '',
+    'admin_user' => '',
+    'admin_email' => '',
+    'smtp_host' => '',
+    'smtp_port' => '587',
+    'smtp_user' => ''
+];
 
 if (file_exists(__DIR__ . '/config/database.php')) {
     echo '<!DOCTYPE html>
@@ -44,41 +54,42 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         exit('Invalid request token.');
     }
 
-    foreach (['db_pass', 'admin_pass', 'smtp_pass'] as $passwordField) {
-        if (array_key_exists($passwordField, $_POST) && !is_string($_POST[$passwordField])) {
-            http_response_code(400);
-            exit('Invalid password input.');
+    $input = $_POST;
+    foreach ($formValues as $field => $default) {
+        $formValues[$field] = is_string($_POST[$field] ?? null) ? $_POST[$field] : '';
+        if (isset($input[$field]) && is_string($input[$field])) {
+            $input[$field] = trim($input[$field]);
         }
     }
 
-    $host = trim($_POST['db_host']);
-    $name = trim($_POST['db_name']);
-    $user = trim($_POST['db_user']);
-    $pass = $_POST['db_pass'] ?? '';
-    $adminUser = trim($_POST['admin_user']);
-    $adminPass = $_POST['admin_pass'] ?? '';
-    $adminEmail = trim($_POST['admin_email']);
-    $smtpHost = trim($_POST['smtp_host']);
-    $smtpPort = trim($_POST['smtp_port']);
-    $smtpUser = trim($_POST['smtp_user']);
-    $smtpPass = $_POST['smtp_pass'] ?? '';
+    $validator = new FormValidator($input);
+    $host = $validator->text('db_host', 'the database host', true, null, null);
+    $name = $validator->text('db_name', 'the database name', true, null, null);
+    $user = $validator->text('db_user', 'the database user', true, null, null);
+    $adminUser = $validator->text('admin_user', 'the admin username', true, 50);
+    $adminEmail = $validator->email('admin_email', 'admin email', true, 100);
+    $smtpHost = $validator->text('smtp_host', 'the SMTP host', true);
+    $smtpPort = $validator->integer('smtp_port', 'SMTP port', 1, 65535);
+    $smtpUser = $validator->text('smtp_user', 'the SMTP username', true);
+    $smtpPass = $validator->text('smtp_pass', 'SMTP password');
 
-    // Validation
-    if (empty($host)) $errors[] = "Please enter the database host.";
-    if (empty($name)) $errors[] = "Please enter the database name.";
-    if (empty($user)) $errors[] = "Please enter the database user.";
-    if (empty($adminUser)) $errors[] = "Please enter the admin username.";
-    if ($adminPass === '') $errors[] = "Please enter the admin password.";
-    if (empty($adminEmail)) $errors[] = "Please enter the admin email.";
-    if (!filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) $errors[] = "Please enter a valid admin email.";
-    if (strlen($adminUser) < 5) $errors[] = "Admin username should be at least 5 characters long.";
-    if (strlen($adminPass) < 8) $errors[] = "Admin password should be at least 8 characters long.";
-    if (empty($smtpHost)) $errors[] = "Please enter the SMTP host.";
-    if (empty($smtpPort)) $errors[] = "Please enter the SMTP port.";
-    if (empty($smtpUser)) $errors[] = "Please enter the SMTP username.";
-    if ($smtpPass === '') $errors[] = "Please enter the SMTP password.";
+    foreach (['db_pass' => 'Database password', 'admin_pass' => 'Admin password'] as $field => $label) {
+        if (array_key_exists($field, $_POST) && !is_string($_POST[$field])) {
+            $validator->addError($field, "$label must be text.");
+        }
+    }
+    $pass = is_string($_POST['db_pass'] ?? null) ? $_POST['db_pass'] : '';
+    $adminPass = is_string($_POST['admin_pass'] ?? null) ? $_POST['admin_pass'] : '';
 
-    if (empty($errors)) {
+    if (strlen($adminUser) < 5) $validator->addError('admin_user', 'Admin username should be at least 5 characters long.');
+    if (strlen($adminPass) < 8) $validator->addError('admin_pass', 'Admin password should be at least 8 characters long.');
+    if (strpos($adminPass, "\0") !== false) $validator->addError('admin_pass', 'Admin password cannot contain a null byte.');
+    if ($smtpPass === '') $validator->addError('smtp_pass', 'Please enter the SMTP password.');
+    $errors = $validator->getErrors();
+
+    if ($errors) {
+        http_response_code(400);
+    } else {
         try {
             $installer = new Installer();
             $success = $installer->install($adminUser, $adminPass, $adminEmail, $host, $name, $user, $pass, $smtpHost, $smtpPort, $smtpUser, $smtpPass);
@@ -127,13 +138,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <div class="sorgs-settings-section">
                     <h2>Database Configuration</h2>
                     <label for="db_host">Database Host</label>
-                    <input type="text" name="db_host" id="db_host" required value="<?php echo isset($_POST['db_host']) ? htmlspecialchars($_POST['db_host']) : 'localhost'; ?>">
+                    <input type="text" name="db_host" id="db_host" required value="<?php echo htmlspecialchars($formValues['db_host']); ?>">
 
                     <label for="db_name">Database Name</label>
-                    <input type="text" name="db_name" id="db_name" required value="<?php echo isset($_POST['db_name']) ? htmlspecialchars($_POST['db_name']) : ''; ?>">
+                    <input type="text" name="db_name" id="db_name" required value="<?php echo htmlspecialchars($formValues['db_name']); ?>">
 
                     <label for="db_user">Database User</label>
-                    <input type="text" name="db_user" id="db_user" required value="<?php echo isset($_POST['db_user']) ? htmlspecialchars($_POST['db_user']) : ''; ?>">
+                    <input type="text" name="db_user" id="db_user" required value="<?php echo htmlspecialchars($formValues['db_user']); ?>">
 
                     <label for="db_pass">Database Password</label>
                     <input type="password" name="db_pass" id="db_pass">
@@ -142,10 +153,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <div class="sorgs-settings-section">
                     <h2>Admin Configuration</h2>
                     <label for="admin_email">Admin Email</label>
-                    <input type="email" name="admin_email" id="admin_email" required value="<?php echo isset($_POST['admin_email']) ? htmlspecialchars($_POST['admin_email']) : ''; ?>">
+                    <input type="email" name="admin_email" id="admin_email" required value="<?php echo htmlspecialchars($formValues['admin_email']); ?>">
 
                     <label for="admin_user">Admin Username</label>
-                    <input type="text" name="admin_user" id="admin_user" required value="<?php echo isset($_POST['admin_user']) ? htmlspecialchars($_POST['admin_user']) : ''; ?>">
+                    <input type="text" name="admin_user" id="admin_user" required value="<?php echo htmlspecialchars($formValues['admin_user']); ?>">
 
                     <label for="admin_pass">Admin Password</label>
                     <input type="password" name="admin_pass" id="admin_pass" required>
@@ -154,13 +165,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <div class="sorgs-settings-section">
                     <h2>SMTP Configuration</h2>
                     <label for="smtp_host">SMTP Host</label>
-                    <input type="text" name="smtp_host" id="smtp_host" required value="<?php echo isset($_POST['smtp_host']) ? htmlspecialchars($_POST['smtp_host']) : ''; ?>">
+                    <input type="text" name="smtp_host" id="smtp_host" required value="<?php echo htmlspecialchars($formValues['smtp_host']); ?>">
 
                     <label for="smtp_port">SMTP Port</label>
-                    <input type="number" name="smtp_port" id="smtp_port" required value="<?php echo isset($_POST['smtp_port']) ? htmlspecialchars($_POST['smtp_port']) : '587'; ?>">
+                    <input type="number" name="smtp_port" id="smtp_port" required value="<?php echo htmlspecialchars($formValues['smtp_port']); ?>">
 
                     <label for="smtp_user">SMTP Username</label>
-                    <input type="text" name="smtp_user" id="smtp_user" required value="<?php echo isset($_POST['smtp_user']) ? htmlspecialchars($_POST['smtp_user']) : ''; ?>">
+                    <input type="text" name="smtp_user" id="smtp_user" required value="<?php echo htmlspecialchars($formValues['smtp_user']); ?>">
 
                     <label for="smtp_pass">SMTP Password</label>
                     <input type="password" name="smtp_pass" id="smtp_pass" required>

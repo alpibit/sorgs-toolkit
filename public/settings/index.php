@@ -23,6 +23,11 @@ if (!$user->isLoggedIn() || !$user->isAdmin()) {
 }
 
 $message = '';
+$errors = [];
+$retrySecrets = false;
+$conn = $db->connect();
+$stmt = $conn->query("SELECT setting_key, setting_value FROM settings");
+$settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (!csrf_validate($_POST['csrf_token'] ?? null)) {
@@ -30,62 +35,80 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         exit('Invalid request token.');
     }
 
-    $smtpPass = array_key_exists('smtp_pass', $_POST) ? $_POST['smtp_pass'] : '';
-    if (!is_string($smtpPass)) {
-        http_response_code(400);
-        exit('Invalid SMTP password input.');
-    }
-
-    app_log_debug('Processing settings update request.');
-
-    $conn = $db->connect();
-
-    $settingsToUpdate = [
-        'timezone',
-        'date_format',
-        'time_format',
-        'check_interval',
-        'admin_email',
-        'smtp_host',
-        'smtp_port',
-        'smtp_user',
-        'mail_from',
-        'telegram_bot_token',
-        'telegram_default_chat_id'
+    $validator = new FormValidator($_POST);
+    $fields = [
+        'timezone' => 'Timezone',
+        'date_format' => 'Date Format',
+        'time_format' => 'Time Format',
+        'check_interval' => 'Default Check Interval',
+        'admin_email' => 'Admin Email',
+        'smtp_host' => 'SMTP Host',
+        'smtp_port' => 'SMTP Port',
+        'smtp_user' => 'SMTP Username',
+        'mail_from' => 'From Address',
+        'telegram_bot_token' => 'Telegram Bot Token',
+        'telegram_default_chat_id' => 'Default Chat ID'
     ];
-
-    foreach ($settingsToUpdate as $setting) {
-        if (isset($_POST[$setting])) {
-            $value = $_POST[$setting];
-            app_log_debug("Updating setting '$setting'.");
-            $stmt = $conn->prepare("UPDATE settings SET setting_value = ? WHERE setting_key = ?");
-            if ($stmt->execute([$value, $setting])) {
-                app_log_debug("Successfully updated setting '$setting'.");
-            } else {
-                error_log("Failed to update setting '$setting'.");
-                app_log_debug("Setting update error info for '$setting': " . json_encode($stmt->errorInfo()));
-            }
+    $settingsToUpdate = [];
+    foreach ($fields as $setting => $label) {
+        if (!array_key_exists($setting, $_POST)) {
+            $validator->addError($setting, "$label is missing from the request.");
         }
-    }
-
-    // Handle SMTP password separately
-    if ($smtpPass !== '') {
-        $stmt = $conn->prepare("UPDATE settings SET setting_value = ? WHERE setting_key = 'smtp_pass'");
-        if ($stmt->execute([$smtpPass])) {
-            app_log_debug('Successfully updated SMTP password setting.');
+        if ($setting === 'smtp_port') {
+            $value = $validator->integer($setting, $label, 1, 65535, false);
+        } elseif ($setting === 'check_interval') {
+            $value = $validator->integer($setting, $label, -2147483648, 2147483647, false);
+        } elseif ($setting === 'admin_email' || $setting === 'mail_from') {
+            $value = $validator->email($setting, $label);
         } else {
-            error_log('Failed to update SMTP password setting.');
-            app_log_debug('SMTP password update error info: ' . json_encode($stmt->errorInfo()));
+            $value = $validator->text($setting, $label);
+        }
+        $settingsToUpdate[$setting] = $value;
+        if ($setting !== 'telegram_bot_token') {
+            $settings[$setting] = $value;
         }
     }
 
-    $message = "Settings updated successfully.";
-}
+    $smtpPass = $validator->text('smtp_pass', 'SMTP Password');
+    $retrySecrets = $smtpPass !== '' || $settingsToUpdate['telegram_bot_token'] !== ($settings['telegram_bot_token'] ?? '');
+    if ($smtpPass !== '') {
+        $settingsToUpdate['smtp_pass'] = $smtpPass;
+    }
 
-// Fetch current settings
-$conn = $db->connect();
-$stmt = $conn->query("SELECT setting_key, setting_value FROM settings");
-$settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+    $errors = $validator->getErrors();
+    if ($errors) {
+        http_response_code(400);
+    } else {
+        try {
+            if (!$conn->beginTransaction()) {
+                throw new RuntimeException('Could not start settings transaction.');
+            }
+            $stmt = $conn->prepare("INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)
+                ON DUPLICATE KEY UPDATE setting_value = ?");
+            foreach ($settingsToUpdate as $setting => $value) {
+                if (!$stmt->execute([$setting, $value, $value])) {
+                    throw new RuntimeException('Could not save setting.');
+                }
+            }
+            if (!$conn->commit()) {
+                throw new RuntimeException('Could not commit settings transaction.');
+            }
+            $settings['telegram_bot_token'] = $settingsToUpdate['telegram_bot_token'];
+            $message = "Settings updated successfully.";
+        } catch (Throwable $e) {
+            if ($conn->inTransaction()) {
+                try {
+                    $conn->rollBack();
+                } catch (Throwable $rollbackError) {
+                    error_log('Failed to roll back settings transaction (' . get_class($rollbackError) . ').');
+                }
+            }
+            error_log('Failed to save settings (' . get_class($e) . ').');
+            $errors[] = 'Could not save settings. Please try again.';
+            http_response_code(500);
+        }
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -109,6 +132,18 @@ $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
 
         <?php if ($message): ?>
             <div class="sorgs-message success"><?php echo htmlspecialchars($message); ?></div>
+        <?php endif; ?>
+        <?php if ($errors): ?>
+            <div class="sorgs-message error">
+                <ul>
+                    <?php foreach ($errors as $error): ?>
+                        <li><?php echo htmlspecialchars($error); ?></li>
+                    <?php endforeach; ?>
+                </ul>
+                <?php if ($retrySecrets): ?>
+                    <p>Re-enter any changed SMTP password or Telegram bot token before saving again.</p>
+                <?php endif; ?>
+            </div>
         <?php endif; ?>
 
         <form method="post" class="sorgs-form">

@@ -35,61 +35,91 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !csrf_validate($_POST['csrf_token']
     exit('Invalid request token.');
 }
 
-$action = isset($_GET['action']) ? $_GET['action'] : '';
+$action = is_string($_GET['action'] ?? null) ? $_GET['action'] : '';
 $message = '';
+$errors = [];
+
+if (in_array($action, ['edit', 'delete', 'check', 'test'], true) &&
+    ($action === 'edit' || $_SERVER['REQUEST_METHOD'] === 'POST')) {
+    $input = $_SERVER['REQUEST_METHOD'] === 'POST' ? $_POST : $_GET;
+    $validator = new FormValidator($input);
+    $monitorId = $validator->integer('id', 'monitor ID', 1);
+    if ($validator->getErrors()) {
+        http_response_code(400);
+        $message = 'Invalid or missing monitor ID.';
+        $action = '';
+    } else {
+        $monitorData = $monitor->getMonitor($monitorId);
+        if (!$monitorData) {
+            http_response_code(404);
+            $message = 'Monitor not found.';
+            $action = '';
+        }
+    }
+}
 
 switch ($action) {
     case 'add':
-        if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-            $result = $monitor->addMonitor(
-                $_POST['name'],
-                $_POST['url'],
-                $_POST['check_interval'],
-                $_POST['expected_status_code'],
-                $_POST['expected_keyword'],
-                $_POST['notification_emails'],
-                $_POST['telegram_chat_ids']
-            );
-            if ($result) {
-                $message = "Monitor added successfully.";
-            } else {
-                $message = "Failed to add monitor.";
-            }
-            header('Location: index.php?message=' . urlencode($message));
-            exit;
-        }
-        break;
-
     case 'edit':
         if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-            $result = $monitor->updateMonitor(
-                $_POST['id'],
-                $_POST['name'],
-                $_POST['url'],
-                $_POST['check_interval'],
-                $_POST['expected_status_code'],
-                $_POST['expected_keyword'],
-                $_POST['notification_emails'],
-                $_POST['telegram_chat_ids']
-            );
-            if ($result) {
-                $message = "Monitor updated successfully.";
-            } else {
-                $message = "Failed to update monitor.";
+            $validator = new FormValidator($_POST);
+            $monitorData = [
+                'name' => $validator->text('name', 'monitor name', true, 255),
+                'url' => $validator->text('url', 'URL', true, 255),
+                'check_interval' => $validator->integer('check_interval', 'check interval'),
+                'expected_status_code' => $validator->integer('expected_status_code', 'expected status code'),
+                'expected_keyword' => $validator->text('expected_keyword', 'expected keyword', false, 255),
+                'notification_emails' => $validator->text('notification_emails', 'notification emails'),
+                'telegram_chat_ids' => $validator->text('telegram_chat_ids', 'Telegram chat IDs')
+            ];
+            $url = $monitorData['url'];
+            if ($url !== '' && (preg_match('/[\x00-\x20\x7f]/', $url) ||
+                !preg_match('/^[a-z][a-z0-9+.-]*:/i', $url) || parse_url($url) === false)) {
+                $validator->addError('url', 'Please enter a valid URL.');
             }
-            header('Location: index.php?message=' . urlencode($message));
-            exit;
+            $emails = array_map('trim', explode(' ', $monitorData['notification_emails']));
+            foreach ($emails as $email) {
+                if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    $validator->addError('notification_emails', 'Please enter valid notification email addresses separated by spaces.');
+                    break;
+                }
+            }
+            $errors = $validator->getErrors();
+            $values = $monitorData;
+            $values['notification_emails'] = implode(' ', $emails);
+            $values = array_values($values);
+            if ($action === 'edit') {
+                $monitorData['id'] = $monitorId;
+            }
+            if ($errors) {
+                http_response_code(400);
+            } else {
+                try {
+                    $result = $action === 'add'
+                        ? $monitor->addMonitor(...$values)
+                        : $monitor->updateMonitor($monitorId, ...$values);
+                    if ($result) {
+                        $message = $action === 'add' ? 'Monitor added successfully.' : 'Monitor updated successfully.';
+                        header('Location: index.php?message=' . urlencode($message));
+                        exit;
+                    }
+                    $errors[] = 'The monitor could not be saved. It may have been deleted. Reload the page and try again.';
+                } catch (PDOException $e) {
+                    error_log('Failed to save monitor.');
+                    $errors[] = 'The monitor could not be saved. Please try again.';
+                }
+                http_response_code(500);
+            }
         }
-        $monitorData = $monitor->getMonitor($_GET['id']);
         break;
 
     case 'delete':
-        if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['id'])) {
-            $result = $monitor->deleteMonitor($_POST['id']);
-            if ($result) {
-                $message = "Monitor deleted successfully.";
-            } else {
-                $message = "Failed to delete monitor.";
+        if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+            try {
+                $message = $monitor->deleteMonitor($monitorId) ? 'Monitor deleted successfully.' : 'Monitor not found.';
+            } catch (PDOException $e) {
+                error_log('Failed to delete monitor.');
+                $message = 'Failed to delete monitor. Please try again.';
             }
             header('Location: index.php?message=' . urlencode($message));
             exit;
@@ -97,8 +127,7 @@ switch ($action) {
         break;
 
     case 'check':
-        if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['id'])) {
-            $monitorData = $monitor->getMonitor($_POST['id']);
+        if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             if ($monitorData) {
                 $result = $monitor->checkSite($monitorData, 1, 5);
                 $message = "Monitor status: " . ucfirst($result['status']) . ". " . $result['message'];
@@ -114,8 +143,7 @@ switch ($action) {
         break;
 
     case 'test':
-        if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['id'])) {
-            $monitorData = $monitor->getMonitor($_POST['id']);
+        if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             if ($monitorData) {
                 $testResult = [
                     'status' => 'down',
@@ -198,7 +226,7 @@ $stmt = $conn->query("SELECT
     FROM monitors");
 $sslStats = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if (isset($_GET['message'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && $message === '' && is_string($_GET['message'] ?? null)) {
     $message = $_GET['message'];
 }
 ?>
@@ -232,6 +260,16 @@ if (isset($_GET['message'])) {
 
         <?php if ($message): ?>
             <div class="sorgs-message"><?php echo htmlspecialchars($message); ?></div>
+        <?php endif; ?>
+
+        <?php if ($errors): ?>
+            <div class="sorgs-message error">
+                <ul>
+                    <?php foreach ($errors as $error): ?>
+                        <li><?php echo htmlspecialchars($error); ?></li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
         <?php endif; ?>
 
         <?php if ($action != 'add' && $action != 'edit'): ?>
